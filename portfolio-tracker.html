@@ -964,7 +964,12 @@ async function fetchAnalysis() {
       analysisTimer_=setTimeout(fetchAnalysis,ANALYSIS_RETRY);
       return;
     }
-  } catch(e) { setAnalysisBadge('error'); }
+  } catch(e) {
+    setAnalysisBadge('error');
+    // Retry quickly after a failure (server may have been restarting)
+    analysisTimer_=setTimeout(fetchAnalysis, 30_000);
+    return;
+  }
   analysisTimer_=setTimeout(fetchAnalysis,ANALYSIS_TTL_MS);
 }
 
@@ -991,7 +996,7 @@ function setAnalysisBadge(status,ts) {
     const t=ts?new Date(ts*1000).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}):'';
     el.innerHTML=`<span style="color:var(--muted);font-size:11px">Analysis ${t}</span>`;
   } else {
-    el.innerHTML='<span style="color:var(--red);font-size:11px">Analysis unavailable</span>';
+    el.innerHTML='<span style="color:var(--red);font-size:11px;cursor:pointer" onclick="fetchAnalysis()" title="Click to retry">&#9888; Analysis unavailable — click to retry</span>';
   }
 }
 
