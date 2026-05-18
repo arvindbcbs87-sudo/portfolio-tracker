@@ -228,7 +228,11 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         p = urllib.parse.urlparse(self.path)
         q = urllib.parse.parse_qs(p.query)
-        if   p.path == '/api/prices':         self._prices(q)
+        if   p.path == '/' or p.path == '':
+            self.send_response(302)
+            self.send_header('Location', '/portfolio-tracker.html')
+            self.end_headers()
+        elif p.path == '/api/prices':         self._prices(q)
         elif p.path == '/api/analysis':        self._analysis(q)
         elif p.path == '/api/chart':           self._chart(q)
         elif p.path == '/api/portfolio':       self._get_portfolio()
