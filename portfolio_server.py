@@ -410,7 +410,11 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header('Access-Control-Allow-Headers', 'Content-Type')
 
     def _json(self, obj):
-        b = json.dumps(obj, default=str).encode('utf-8')
+        def safe_default(o):
+            if isinstance(o, float) and (math.isnan(o) or math.isinf(o)):
+                return None   # NaN / Infinity → JSON null (browsers reject bare NaN)
+            return str(o)
+        b = json.dumps(obj, default=safe_default).encode('utf-8')
         self.send_response(200)
         self.send_header('Content-Type', 'application/json; charset=utf-8')
         self.send_header('Content-Length', str(len(b)))
