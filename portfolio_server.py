@@ -44,10 +44,16 @@ def nse(sym):
     return None if sym in SGB_SET else urllib.parse.quote(sym, safe='') + '.NS'
 
 def rsi14(s):
+    s = s.dropna()
+    if len(s) < 15:
+        import pandas as pd
+        return pd.Series([float('nan')] * len(s), index=s.index)
     d = s.diff()
-    g = d.clip(lower=0).rolling(14).mean()
-    l = (-d.clip(upper=0)).rolling(14).mean()
-    return (100 - 100/(1 + g/l)).round(2)
+    g = d.clip(lower=0).rolling(14, min_periods=14).mean()
+    l = (-d.clip(upper=0)).rolling(14, min_periods=14).mean()
+    # avoid 0/0 and x/0: replace 0 loss with NaN so we get NaN (not inf) RSI
+    l_safe = l.replace(0, float('nan'))
+    return (100 - 100 / (1 + g / l_safe)).round(2)
 
 def sf(v):
     try:
@@ -57,6 +63,16 @@ def sf(v):
 
 def clean(series):
     return [sf(v) for v in series]
+
+def clean_json(obj):
+    """Recursively replace NaN/Infinity floats with None so json.dumps produces valid JSON."""
+    if isinstance(obj, float):
+        return None if (math.isnan(obj) or math.isinf(obj)) else obj
+    if isinstance(obj, dict):
+        return {k: clean_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [clean_json(v) for v in obj]
+    return obj
 
 # ── PRICES ─────────────────────────────────────────────────────────────────────
 def fetch_prices(symbols):
@@ -101,45 +117,53 @@ def analyse_one(sym):
         t = yf.Ticker(y)
         h = t.history(period='1y', interval='1d')
         if h.empty: return sym, {'call':'HOLD','trend':'N/A','rsi':None,'news':[]}
-        c = h['Close']; vol = h['Volume']
+        c   = h['Close'].dropna()   # clean series — removes any NaN price rows
+        vol = h['Volume'].dropna()
+        if len(c) < 20:
+            return sym, {'call':'HOLD','trend':'N/A','rsi':None,'news':[],'error':'insufficient data'}
         ltp = float(c.iloc[-1])
 
-        # ── Moving averages ───────────────────────────────────────────────────────
-        ma20  = float(c.rolling(20).mean().iloc[-1])
-        ma50  = float(c.rolling(50).mean().iloc[-1])
-        ma200 = float(c.rolling(200).mean().iloc[-1])
+        # ── Moving averages (use sf() so NaN → None, not a crash) ────────────────
+        ma20  = sf(c.rolling(20, min_periods=20).mean().iloc[-1])
+        ma50  = sf(c.rolling(50, min_periods=50).mean().iloc[-1])
+        ma200 = sf(c.rolling(200, min_periods=200).mean().iloc[-1])
 
         # ── RSI ───────────────────────────────────────────────────────────────────
-        rsi_v = float(rsi14(c).iloc[-1])
+        rsi_v = sf(rsi14(c).iloc[-1])   # sf() converts NaN → None
 
         # ── MACD histogram + direction ────────────────────────────────────────────
-        ema12     = c.ewm(span=12).mean()
-        ema26     = c.ewm(span=26).mean()
+        ema12     = c.ewm(span=12, min_periods=12).mean()
+        ema26     = c.ewm(span=26, min_periods=26).mean()
         macd_line = ema12 - ema26
-        sig_line  = macd_line.ewm(span=9).mean()
+        sig_line  = macd_line.ewm(span=9, min_periods=9).mean()
         hist      = macd_line - sig_line
-        mh_cur    = float(hist.iloc[-1])
-        mh_prev   = float(hist.iloc[-2]) if len(hist) > 1 else mh_cur
+        mh_cur    = sf(hist.iloc[-1])
+        mh_prev   = sf(hist.iloc[-2]) if len(hist) > 1 else mh_cur
 
         # ── Bollinger Bands ───────────────────────────────────────────────────────
-        bb_m = c.rolling(20).mean()
-        bb_s = c.rolling(20).std()
-        bb_u = float((bb_m + 2*bb_s).iloc[-1])
-        bb_l = float((bb_m - 2*bb_s).iloc[-1])
+        bb_m = c.rolling(20, min_periods=20).mean()
+        bb_s = c.rolling(20, min_periods=20).std()
+        bb_u = sf((bb_m + 2*bb_s).iloc[-1])
+        bb_l = sf((bb_m - 2*bb_s).iloc[-1])
 
         # ── 52-week range ─────────────────────────────────────────────────────────
         w52h = float(c.max()); w52l = float(c.min())
         pct_from_high = (ltp - w52h) / w52h * 100
 
         # ── Volume (5-day avg vs 20-day avg) ──────────────────────────────────────
-        vol_ma20  = float(vol.rolling(20).mean().iloc[-1]) if len(vol) >= 20 else None
-        vol_5d    = float(vol.tail(5).mean())              if len(vol) >= 5  else None
+        vol_ma20  = sf(vol.rolling(20, min_periods=20).mean().iloc[-1]) if len(vol) >= 20 else None
+        vol_5d    = sf(vol.tail(5).mean()) if len(vol) >= 5 else None
         vol_ratio = round(vol_5d / vol_ma20, 2) if (vol_ma20 and vol_5d and vol_ma20 > 0) else None
         price_5d_ago = float(c.iloc[-6]) if len(c) > 5 else None
 
-        # ── Trend ─────────────────────────────────────────────────────────────────
-        trend = ('UPTREND'   if ltp > ma50 > ma200 else
-                 'DOWNTREND' if ltp < ma50 < ma200 else 'SIDEWAYS')
+        # ── Trend (only if MAs are valid) ─────────────────────────────────────────
+        if ma50 is not None and ma200 is not None:
+            trend = ('UPTREND'   if ltp > ma50 > ma200 else
+                     'DOWNTREND' if ltp < ma50 < ma200 else 'SIDEWAYS')
+        elif ma50 is not None:
+            trend = 'UPTREND' if ltp > ma50 else 'DOWNTREND'
+        else:
+            trend = 'SIDEWAYS'
 
         # ── Fundamentals ─────────────────────────────────────────────────────────
         try:   info = t.info
@@ -154,49 +178,55 @@ def analyse_one(sym):
         score = 0
 
         # 1. RSI — momentum / oversold-overbought (-3 to +3)
-        if   rsi_v < 25: score += 3   # deeply oversold — strong buy signal
-        elif rsi_v < 35: score += 2   # oversold
-        elif rsi_v < 45: score += 1   # mildly weak — slight edge to buyers
-        elif rsi_v < 55: pass          # neutral zone
-        elif rsi_v < 65: score -= 1   # building overbought
-        elif rsi_v < 75: score -= 2   # overbought
-        else:            score -= 3   # extremely overbought
+        if rsi_v is not None:
+            if   rsi_v < 25: score += 3
+            elif rsi_v < 35: score += 2
+            elif rsi_v < 45: score += 1
+            elif rsi_v < 55: pass
+            elif rsi_v < 65: score -= 1
+            elif rsi_v < 75: score -= 2
+            else:            score -= 3
 
         # 2. MACD histogram — momentum direction (-2 to +2)
-        if   mh_cur > 0 and mh_cur >= mh_prev: score += 2  # bullish & strengthening
-        elif mh_cur > 0:                        score += 1  # bullish but fading
-        elif mh_cur < 0 and mh_cur > mh_prev:  score -= 1  # bearish but recovering
-        else:                                   score -= 2  # bearish & deepening
+        if mh_cur is not None and mh_prev is not None:
+            if   mh_cur > 0 and mh_cur >= mh_prev: score += 2
+            elif mh_cur > 0:                        score += 1
+            elif mh_cur < 0 and mh_cur > mh_prev:  score -= 1
+            else:                                   score -= 2
 
         # 3. Trend via moving averages (-2 to +2)
-        if   ltp > ma50 > ma200: score += 2   # classic uptrend
-        elif ltp > ma200:        score += 1   # above long-term MA at least
-        elif ltp > ma50:         score -= 1   # mixed (above medium, below long)
-        else:                    score -= 2   # below both = downtrend
+        if ma50 is not None and ma200 is not None:
+            if   ltp > ma50 > ma200: score += 2
+            elif ltp > ma200:        score += 1
+            elif ltp > ma50:         score -= 1
+            else:                    score -= 2
+        elif ma50 is not None:
+            if   ltp > ma50: score += 1
+            else:            score -= 1
 
         # 4. Bollinger Bands position (-1 to +1)
-        if   ltp <= bb_l * 1.02: score += 1   # near lower band = potential bounce
-        elif ltp >= bb_u * 0.98: score -= 1   # near upper band = stretched
+        if bb_l is not None and bb_u is not None:
+            if   ltp <= bb_l * 1.02: score += 1
+            elif ltp >= bb_u * 0.98: score -= 1
 
         # 5. Volume confirmation (-1 to +1)
-        # High volume on a rising price = conviction; high vol on falling = distribution
-        if vol_ratio and price_5d_ago:
+        if vol_ratio is not None and price_5d_ago is not None:
             if   vol_ratio > 1.2 and ltp >= price_5d_ago: score += 1
             elif vol_ratio > 1.2 and ltp <  price_5d_ago: score -= 1
 
         # 6. 52-week position (-1 to +1)
-        if   pct_from_high < -40: score += 1   # deep correction = potential value
-        elif pct_from_high > -5:  score -= 1   # near 52W high = limited near-term upside
+        if   pct_from_high < -40: score += 1
+        elif pct_from_high > -5:  score -= 1
 
         # 7. P/E ratio (-1 to +1)
-        if   pe_val and 0 < pe_val < 15: score += 1   # cheap valuation
-        elif pe_val and pe_val > 50:     score -= 1   # expensive
+        if   pe_val and 0 < pe_val < 15: score += 1
+        elif pe_val and pe_val > 50:     score -= 1
 
         # 8. Return on Equity (0 to +1)
-        if roe_val and roe_val > 0.15: score += 1   # company efficiently earns >15% on equity
+        if roe_val and roe_val > 0.15: score += 1
 
         # 9. Revenue growth (-1 to 0)
-        if rev_g and rev_g < 0: score -= 1   # shrinking revenue is a red flag
+        if rev_g and rev_g < 0: score -= 1
 
         # ── FINAL SIGNAL ──────────────────────────────────────────────────────────
         if   score >= 4:  call = 'BUY'
@@ -209,12 +239,12 @@ def analyse_one(sym):
         except: news = []
 
         return sym, {
-            'rsi': round(rsi_v,1),
-            'macd_hist': round(mh_cur,3), 'macd_bullish': mh_cur > 0,
-            'macd_strengthening': bool(mh_cur > mh_prev),
+            'rsi': rsi_v,
+            'macd_hist': mh_cur, 'macd_bullish': bool(mh_cur > 0) if mh_cur is not None else None,
+            'macd_strengthening': bool(mh_cur > mh_prev) if (mh_cur is not None and mh_prev is not None) else None,
             'trend': trend, 'call': call, 'score': score,
-            'ma20': round(ma20,2), 'ma50': round(ma50,2), 'ma200': round(ma200,2),
-            'bb_upper': round(bb_u,2), 'bb_lower': round(bb_l,2),
+            'ma20': ma20, 'ma50': ma50, 'ma200': ma200,
+            'bb_upper': bb_u, 'bb_lower': bb_l,
             'w52_high': round(w52h,2), 'w52_low': round(w52l,2),
             'from_high': round(pct_from_high,1),
             'vol_ratio': vol_ratio,
@@ -410,11 +440,7 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header('Access-Control-Allow-Headers', 'Content-Type')
 
     def _json(self, obj):
-        def safe_default(o):
-            if isinstance(o, float) and (math.isnan(o) or math.isinf(o)):
-                return None   # NaN / Infinity → JSON null (browsers reject bare NaN)
-            return str(o)
-        b = json.dumps(obj, default=safe_default).encode('utf-8')
+        b = json.dumps(clean_json(obj), default=str).encode('utf-8')
         self.send_response(200)
         self.send_header('Content-Type', 'application/json; charset=utf-8')
         self.send_header('Content-Length', str(len(b)))
