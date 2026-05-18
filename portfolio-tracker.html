@@ -224,8 +224,62 @@
     .sp-loading { padding:30px 20px; text-align:center; color:var(--muted); font-size:13px; }
     .sp-computing { padding:14px 20px; font-size:12px; color:var(--yellow); display:flex; align-items:center; gap:6px; border-bottom:1px solid var(--border); }
 
+    /* ── WATCHLIST ── */
+    .wl-search-bar {
+      display: flex; gap: 10px; align-items: center; margin-bottom: 20px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+      padding: 14px 18px;
+    }
+    .wl-search-bar input {
+      flex: 1; padding: 8px 12px; background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 6px; color: var(--text); font-size: 14px; outline: none;
+    }
+    .wl-search-bar input:focus { border-color: var(--blue); }
+    .wl-search-bar input::placeholder { color: var(--muted); }
+    .wl-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px;
+    }
+    .wl-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+      padding: 16px; display: flex; flex-direction: column; gap: 12px;
+      transition: border-color .2s;
+    }
+    .wl-card:hover { border-color: var(--muted); }
+    .wl-card-header { display: flex; justify-content: space-between; align-items: flex-start; }
+    .wl-sym { font-size: 16px; font-weight: 700; cursor: pointer; color: var(--text); }
+    .wl-sym:hover { color: var(--blue); }
+    .wl-sector { font-size: 10px; color: var(--muted); margin-top: 3px; }
+    .wl-price-row { display: flex; align-items: baseline; gap: 8px; }
+    .wl-ltp { font-size: 20px; font-weight: 700; }
+    .wl-chg { font-size: 12px; font-weight: 600; }
+    .wl-verdict {
+      border: 1px solid var(--border); border-radius: 7px; padding: 10px 12px;
+      border-left-width: 3px;
+    }
+    .wl-verdict-label { font-size: 14px; font-weight: 800; letter-spacing: .2px; margin-bottom: 4px; }
+    .wl-verdict-desc { font-size: 11px; color: var(--muted); line-height: 1.5; }
+    .wl-signals { display: flex; flex-direction: column; gap: 6px; }
+    .wl-signal-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+    .wl-signal-key { color: var(--muted); width: 44px; flex-shrink: 0; font-size: 11px; }
+    .wl-metrics { display: grid; grid-template-columns: repeat(2,1fr); gap: 6px; }
+    .wl-metric { background: var(--surface2); border-radius: 5px; padding: 6px 8px; }
+    .wl-metric .lbl { font-size: 10px; color: var(--muted); margin-bottom: 2px; }
+    .wl-metric .val { font-size: 13px; font-weight: 600; }
+    .wl-analyse-btn {
+      width: 100%; padding: 8px; background: none; border: 1px solid var(--border);
+      border-radius: 6px; color: var(--blue); font-size: 12px; cursor: pointer;
+      transition: background .15s;
+    }
+    .wl-analyse-btn:hover { background: var(--surface2); }
+    .wl-computing { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; padding: 8px 0; }
+    .wl-refresh-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; font-size: 12px; color: var(--muted); }
+    .wl-count { font-weight: 600; color: var(--text); }
+    .wl-empty { text-align:center; padding:60px 20px; color:var(--muted); }
+    .wl-empty-icon { font-size:44px; margin-bottom:14px; }
+    .wl-empty-title { font-size:15px; font-weight:600; color:var(--text); margin-bottom:6px; }
+
     @media (max-width:1100px) { .summary-grid { grid-template-columns:repeat(3,1fr); } }
-    @media (max-width:700px)  { .main{padding:12px;} .summary-grid{grid-template-columns:1fr 1fr;} .hide-sm{display:none;} .search-bar{width:130px;} .stock-panel{width:100vw; right:-100vw;} }
+    @media (max-width:700px)  { .main{padding:12px;} .summary-grid{grid-template-columns:1fr 1fr;} .hide-sm{display:none;} .search-bar{width:130px;} .stock-panel{width:100vw; right:-100vw;} .wl-grid{grid-template-columns:1fr;} }
   </style>
 </head>
 <body>
@@ -250,6 +304,7 @@
     <button class="tab active" onclick="switchTab('all')"   id="tab-all">All Holdings</button>
     <button class="tab"        onclick="switchTab('p1')"    id="tab-p1">Portfolio 1</button>
     <button class="tab"        onclick="switchTab('p2')"    id="tab-p2">Portfolio 2</button>
+    <button class="tab"        onclick="switchTab('watchlist')" id="tab-watchlist">&#128270; Watchlist</button>
     <button class="tab"        onclick="switchTab('guide')" id="tab-guide" style="margin-left:auto">&#128218; Reading Guide</button>
   </div>
   <div class="table-container">
@@ -265,6 +320,19 @@
       <table><thead id="tHead"></thead><tbody id="tBody"></tbody></table>
     </div>
   </div>
+</div>
+
+<!-- Watchlist Section -->
+<div id="watchlistSection" style="display:none">
+  <div class="wl-search-bar">
+    <input type="text" id="wlInput" placeholder="Enter NSE symbol (e.g. INFY, TATAMOTORS)…" onkeydown="if(event.key==='Enter')addToWatchlist()">
+    <button class="btn btn-primary" onclick="addToWatchlist()">+ Add to Watchlist</button>
+  </div>
+  <div class="wl-refresh-bar">
+    <span><span class="wl-count" id="wlCount">0</span> stocks on watchlist</span>
+    <span id="wlLastRefresh" style="color:var(--muted);font-size:11px"></span>
+  </div>
+  <div id="watchlistContent"></div>
 </div>
 
 <!-- Glossary / Reading Guide -->
@@ -751,6 +819,14 @@ let analysisTimer_    = null;
 let panelCharts   = {};
 let currentPanelSym = null;
 
+// ── WATCHLIST STATE ───────────────────────────────────────────────────────────
+let watchlist         = JSON.parse(localStorage.getItem('wl_v1')||'[]');  // [{symbol,addedAt}]
+let watchlistPrices   = {};   // symbol -> {ltp, change, changePct}
+let watchlistAnalysis = {};   // symbol -> analysis object
+let wlLiveTimer       = null;
+let wlAnalysisTimers  = {};   // symbol -> setTimeout handle
+let wlAnalysisRefreshTimer = null;
+
 // ── PORTFOLIO PERSISTENCE (server-first, localStorage fallback) ────────────────
 async function loadPortfolio() {
   try {
@@ -1031,11 +1107,15 @@ function switchTab(tab) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.getElementById('tab-' + tab).classList.add('active');
 
-  const isGuide = tab === 'guide';
-  document.querySelector('.table-container').style.display = isGuide ? 'none' : '';
-  document.getElementById('glossarySection').style.display = isGuide ? 'block' : 'none';
+  const isGuide     = tab === 'guide';
+  const isWatchlist = tab === 'watchlist';
+  document.querySelector('.table-container').style.display   = (isGuide||isWatchlist) ? 'none'  : '';
+  document.getElementById('glossarySection').style.display   = isGuide     ? 'block' : 'none';
+  document.getElementById('watchlistSection').style.display  = isWatchlist ? 'block' : 'none';
+  document.getElementById('summaryGrid').style.display       = (isGuide||isWatchlist) ? 'none'  : '';
 
-  if (!isGuide) render();
+  if (!isGuide && !isWatchlist) render();
+  if (isWatchlist) renderWatchlist();
 }
 function doSort(key) {
   if (key==='_') return;
@@ -1120,6 +1200,11 @@ function updatePanelPrice(sym) {
   for (const pid of ['p1','p2']) {
     const s=D.portfolios[pid].stocks.find(x=>x.symbol===sym);
     if (s) { ltp=s.ltp; chg=s._chg??null; chgPct=s._chgPct??null; break; }
+  }
+  // Also check watchlist prices if not in portfolio
+  if (ltp==null && watchlistPrices[sym]) {
+    const wp=watchlistPrices[sym];
+    ltp=wp.ltp??null; chg=wp.change??null; chgPct=wp.changePct??null;
   }
   const ltpEl=document.getElementById('spLtp'), chgEl=document.getElementById('spChg');
   if (ltpEl&&ltp!=null) {
@@ -1446,12 +1531,265 @@ function importData() {
 function close1(id) { document.getElementById(id).style.display='none'; }
 function bgClose(e,id) { if (e.target.classList.contains('modal-overlay')) close1(id); }
 
+// ── WATCHLIST FUNCTIONS ───────────────────────────────────────────────────────
+
+function saveWatchlist() {
+  localStorage.setItem('wl_v1', JSON.stringify(watchlist));
+}
+
+function addToWatchlist() {
+  const inp = document.getElementById('wlInput');
+  const sym  = inp.value.toUpperCase().trim().replace(/\.NS$/i,'');
+  if (!sym) return;
+  if (watchlist.find(w => w.symbol === sym)) {
+    alert(sym + ' is already in your watchlist'); return;
+  }
+  watchlist.push({symbol: sym, addedAt: new Date().toISOString()});
+  saveWatchlist();
+  inp.value = '';
+  renderWatchlist();
+  // kick off price + analysis fetch for the new stock
+  fetchWatchlistPrices();
+  analyseWatchlistStock(sym);
+}
+
+function removeFromWatchlist(sym) {
+  if (!confirm('Remove ' + sym + ' from watchlist?')) return;
+  watchlist = watchlist.filter(w => w.symbol !== sym);
+  delete watchlistPrices[sym];
+  delete watchlistAnalysis[sym];
+  if (wlAnalysisTimers[sym]) { clearTimeout(wlAnalysisTimers[sym]); delete wlAnalysisTimers[sym]; }
+  saveWatchlist();
+  renderWatchlist();
+}
+
+async function fetchWatchlistPrices() {
+  const syms = watchlist.map(w => w.symbol);
+  if (!syms.length) return;
+  try {
+    const res  = await fetch('/api/prices?symbols=' + syms.map(encodeURIComponent).join(','));
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.prices) {
+      for (const sym of syms) {
+        if (data.prices[sym]) watchlistPrices[sym] = data.prices[sym];
+      }
+      if (activeTab === 'watchlist') renderWatchlist();
+      if (currentPanelSym && watchlistPrices[currentPanelSym]) updatePanelPrice(currentPanelSym);
+      const el = document.getElementById('wlLastRefresh');
+      if (el) el.textContent = 'Prices updated ' + new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
+    }
+  } catch(e) {}
+}
+
+async function analyseWatchlistStock(sym) {
+  // Show computing state immediately
+  if (activeTab === 'watchlist') renderWatchlistCard(sym);
+  try {
+    const res  = await fetch('/api/analyse_stock?symbol=' + encodeURIComponent(sym));
+    if (!res.ok) throw new Error('HTTP '+res.status);
+    const data = await res.json();
+    if (data.analysis) {
+      watchlistAnalysis[sym] = data.analysis;
+      if (activeTab === 'watchlist') renderWatchlistCard(sym);
+    }
+  } catch(e) {
+    console.warn('Watchlist analysis failed for', sym, e);
+  }
+}
+
+function getWatchlistVerdict(a, ltp) {
+  if (!a) return null;
+  let bull = 0;
+
+  // RSI signal
+  if (a.rsi != null) {
+    if (a.rsi < 35)      bull += 2;
+    else if (a.rsi < 50) bull += 1;
+    else if (a.rsi > 70) bull -= 2;
+    else if (a.rsi > 60) bull -= 1;
+  }
+  // MACD
+  if (a.macd_bullish === true)  bull += 1;
+  if (a.macd_bullish === false) bull -= 1;
+  // Trend
+  if (a.trend === 'UPTREND')   bull += 2;
+  if (a.trend === 'DOWNTREND') bull -= 2;
+  // Bollinger
+  if (ltp && a.bb_lower && ltp <= a.bb_lower * 1.02) bull += 1;
+  if (ltp && a.bb_upper && ltp >= a.bb_upper * 0.98) bull -= 1;
+  // 52W position
+  if (a.from_high != null) {
+    if (a.from_high < -40) bull += 1; // deep correction = potential value
+    if (a.from_high > -5)  bull -= 1; // near high = limited upside near-term
+  }
+  // Valuation (P/E)
+  if (a.pe != null) {
+    if (a.pe < 15 && a.pe > 0)  bull += 1;
+    if (a.pe > 50)              bull -= 1;
+  }
+
+  let label, color, desc;
+  if (bull >= 4)       { label='Strong Buy';      color='var(--green)';  desc='Multiple strong buy signals align. Technically and fundamentally attractive right now.'; }
+  else if (bull >= 2)  { label='Good Entry';       color='var(--green)';  desc='More signals are pointing up than down. Decent time to consider entering.'; }
+  else if (bull === 1) { label='Lean Buy';         color='#77c27e';       desc='Slightly more positive than negative. Okay to start a small position; watch for confirmation.'; }
+  else if (bull === 0) {
+    if (a.trend === 'UPTREND') { label='Wait for Dip';   color='var(--yellow)'; desc='Uptrend intact but no momentum edge yet. Wait for a small pullback to enter at a better price.'; }
+    else                        { label='Neutral – Watch'; color='var(--yellow)'; desc='Signals are balanced. No clear edge in either direction. Keep watching.'; }
+  }
+  else if (bull === -1) { label='Not Yet';         color='var(--orange)'; desc='Mild negative signals. Hold off — wait for the picture to improve before buying.'; }
+  else if (bull === -2 && a.trend !== 'DOWNTREND') { label='Avoid for Now'; color='var(--red)'; desc='Several signals are weak or negative. Better opportunities likely elsewhere.'; }
+  else                  { label='Stay Away';       color='var(--red)';    desc='Strong bearish signals. Buying here is fighting the market. High risk of further downside.'; }
+
+  return {label, color, desc, score: bull};
+}
+
+function buildWatchlistSignals(a, ltp) {
+  const rows = [];
+  if (a.rsi != null) {
+    const col = a.rsi < 35 ? 'var(--green)' : a.rsi > 65 ? 'var(--red)' : 'var(--muted)';
+    const lbl = a.rsi < 35 ? 'Oversold' : a.rsi > 65 ? 'Overbought' : 'Neutral';
+    rows.push(`<div class="wl-signal-row"><span class="wl-signal-key">RSI</span><span style="color:${col};font-weight:600">${a.rsi}</span><span style="color:var(--muted);margin-left:4px;font-size:11px">${lbl}</span></div>`);
+  }
+  if (a.macd_bullish != null) {
+    const col = a.macd_bullish ? 'var(--green)' : 'var(--red)';
+    rows.push(`<div class="wl-signal-row"><span class="wl-signal-key">MACD</span><span style="color:${col};font-weight:600">${a.macd_bullish ? 'Bullish' : 'Bearish'}</span></div>`);
+  }
+  if (a.trend) {
+    const col = a.trend==='UPTREND'?'var(--green)':a.trend==='DOWNTREND'?'var(--red)':'var(--yellow)';
+    const lbl = a.trend==='UPTREND'?'Uptrend':a.trend==='DOWNTREND'?'Downtrend':'Sideways';
+    rows.push(`<div class="wl-signal-row"><span class="wl-signal-key">Trend</span><span style="color:${col};font-weight:600">${lbl}</span></div>`);
+  }
+  if (a.bb_lower && a.bb_upper && ltp) {
+    const bbPos = ((ltp - a.bb_lower)/(a.bb_upper - a.bb_lower)*100).toFixed(0);
+    const col = bbPos < 20 ? 'var(--green)' : bbPos > 80 ? 'var(--red)' : 'var(--muted)';
+    const lbl = bbPos < 20 ? 'Near Lower Band' : bbPos > 80 ? 'Near Upper Band' : 'Mid Range';
+    rows.push(`<div class="wl-signal-row"><span class="wl-signal-key">BB</span><span style="color:${col};font-weight:600">${bbPos}%</span><span style="color:var(--muted);margin-left:4px;font-size:11px">${lbl}</span></div>`);
+  }
+  if (a.from_high != null) {
+    const col = a.from_high > -10 ? 'var(--yellow)' : a.from_high < -40 ? 'var(--green)' : 'var(--muted)';
+    rows.push(`<div class="wl-signal-row"><span class="wl-signal-key">52W</span><span style="color:${col};font-weight:600">${a.from_high.toFixed(1)}%</span><span style="color:var(--muted);margin-left:4px;font-size:11px">from high</span></div>`);
+  }
+  return rows.join('');
+}
+
+function buildWatchlistMetrics(a) {
+  const cells = [];
+  if (a.pe != null)        cells.push(['P/E', a.pe > 0 ? a.pe.toFixed(1) : 'N/A']);
+  if (a.pb != null)        cells.push(['P/B', a.pb > 0 ? a.pb.toFixed(2) : 'N/A']);
+  if (a.roe != null)       cells.push(['ROE', a.roe.toFixed(1)+'%']);
+  if (a.div_yield != null && a.div_yield > 0) cells.push(['Div Yld', a.div_yield.toFixed(2)+'%']);
+  if (a.ma50 != null)      cells.push(['MA50', fmt(a.ma50)]);
+  if (a.ma200 != null)     cells.push(['MA200', fmt(a.ma200)]);
+  return cells.map(([l,v])=>`<div class="wl-metric"><div class="lbl">${l}</div><div class="val">${v}</div></div>`).join('');
+}
+
+function renderWatchlistCard(sym) {
+  const el = document.getElementById('wlcard-'+sym.replace(/[^a-zA-Z0-9]/g,'_'));
+  if (!el) { renderWatchlist(); return; }
+  const p   = watchlistPrices[sym];
+  const a   = watchlistAnalysis[sym];
+  const ltp = p ? p.ltp : null;
+
+  let priceHtml = '';
+  if (ltp) {
+    const chg = p.changePct;
+    const col = chg >= 0 ? 'var(--green)' : 'var(--red)';
+    priceHtml = `<div class="wl-price-row">
+      <span class="wl-ltp">&#8377;${fmt(ltp)}</span>
+      <span class="wl-chg" style="color:${col}">${chg >= 0?'+':''}${chg!=null?chg.toFixed(2):'—'}%</span>
+    </div>`;
+  } else {
+    priceHtml = `<div class="wl-price-row"><span style="color:var(--muted);font-size:13px">Loading price…</span></div>`;
+  }
+
+  let bodyHtml = '';
+  if (!a) {
+    bodyHtml = `<div class="wl-computing"><span class="spinner"></span> Analysing… (takes ~10s)</div>`;
+  } else {
+    const verdict = getWatchlistVerdict(a, ltp);
+    const verdictHtml = verdict ? `
+      <div class="wl-verdict" style="border-left-color:${verdict.color}">
+        <div class="wl-verdict-label" style="color:${verdict.color}">${verdict.label}</div>
+        <div class="wl-verdict-desc">${verdict.desc}</div>
+      </div>` : '';
+
+    const signalsHtml = buildWatchlistSignals(a, ltp);
+    const metricsHtml = buildWatchlistMetrics(a);
+
+    bodyHtml = `
+      ${verdictHtml}
+      ${signalsHtml ? `<div class="wl-signals">${signalsHtml}</div>` : ''}
+      ${metricsHtml ? `<div class="wl-metrics">${metricsHtml}</div>` : ''}
+      <button class="wl-analyse-btn" onclick="reAnalyseWatchlistStock('${sym}')">&#8635; Refresh Analysis</button>`;
+  }
+
+  el.innerHTML = `
+    <div class="wl-card-header">
+      <div>
+        <div class="wl-sym" onclick="openStockPanel('${sym}')">${sym}</div>
+        <div class="wl-sector">${a && a.sector ? a.sector : 'NSE Stock'}</div>
+      </div>
+      <button class="btn-del btn" onclick="removeFromWatchlist('${sym}')" title="Remove">&#10005;</button>
+    </div>
+    ${priceHtml}
+    ${bodyHtml}`;
+}
+
+async function reAnalyseWatchlistStock(sym) {
+  delete watchlistAnalysis[sym];
+  renderWatchlistCard(sym);
+  await analyseWatchlistStock(sym);
+}
+
+function renderWatchlist() {
+  const container = document.getElementById('watchlistContent');
+  if (!container) return;
+
+  document.getElementById('wlCount').textContent = watchlist.length;
+
+  if (!watchlist.length) {
+    container.innerHTML = `
+      <div class="wl-empty">
+        <div class="wl-empty-icon">&#128270;</div>
+        <div class="wl-empty-title">Your watchlist is empty</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:6px">Type a stock symbol above and click Add to start tracking it.</div>
+      </div>`;
+    return;
+  }
+
+  // Build grid with individual card divs
+  const ids = watchlist.map(w => w.symbol.replace(/[^a-zA-Z0-9]/g,'_'));
+  container.innerHTML = `<div class="wl-grid">${watchlist.map(w =>
+    `<div class="wl-card" id="wlcard-${w.symbol.replace(/[^a-zA-Z0-9]/g,'_')}"></div>`
+  ).join('')}</div>`;
+
+  // Now fill each card
+  for (const w of watchlist) renderWatchlistCard(w.symbol);
+}
+
+function startWatchlist() {
+  if (watchlist.length === 0) return;
+  fetchWatchlistPrices();
+  // Analyse any stock that doesn't have analysis yet
+  for (const w of watchlist) {
+    if (!watchlistAnalysis[w.symbol]) analyseWatchlistStock(w.symbol);
+  }
+  // Live price refresh every 60s
+  wlLiveTimer = setInterval(fetchWatchlistPrices, 60000);
+  // Analysis refresh every 60 min
+  wlAnalysisRefreshTimer = setInterval(() => {
+    for (const w of watchlist) analyseWatchlistStock(w.symbol);
+  }, 60 * 60 * 1000);
+}
+
 // ── INIT ──────────────────────────────────────────────────────────────────────
 async function init() {
   await loadPortfolio(); // load from server (or localStorage fallback)
   render();
   startLive();
   startAnalysis();
+  startWatchlist();
 }
 init();
 </script>
