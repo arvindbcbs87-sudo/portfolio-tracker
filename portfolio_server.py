@@ -101,49 +101,128 @@ def analyse_one(sym):
         t = yf.Ticker(y)
         h = t.history(period='1y', interval='1d')
         if h.empty: return sym, {'call':'HOLD','trend':'N/A','rsi':None,'news':[]}
-        c = h['Close']; ltp = float(c.iloc[-1])
+        c = h['Close']; vol = h['Volume']
+        ltp = float(c.iloc[-1])
 
+        # ── Moving averages ───────────────────────────────────────────────────────
         ma20  = float(c.rolling(20).mean().iloc[-1])
         ma50  = float(c.rolling(50).mean().iloc[-1])
         ma200 = float(c.rolling(200).mean().iloc[-1])
+
+        # ── RSI ───────────────────────────────────────────────────────────────────
         rsi_v = float(rsi14(c).iloc[-1])
 
-        ema12 = c.ewm(span=12).mean()
-        ema26 = c.ewm(span=26).mean()
-        macd  = ema12 - ema26
-        sig   = macd.ewm(span=9).mean()
-        mh    = float((macd - sig).iloc[-1])
+        # ── MACD histogram + direction ────────────────────────────────────────────
+        ema12     = c.ewm(span=12).mean()
+        ema26     = c.ewm(span=26).mean()
+        macd_line = ema12 - ema26
+        sig_line  = macd_line.ewm(span=9).mean()
+        hist      = macd_line - sig_line
+        mh_cur    = float(hist.iloc[-1])
+        mh_prev   = float(hist.iloc[-2]) if len(hist) > 1 else mh_cur
 
-        bb_m  = c.rolling(20).mean()
-        bb_s  = c.rolling(20).std()
-        bb_u  = float((bb_m + 2*bb_s).iloc[-1])
-        bb_l  = float((bb_m - 2*bb_s).iloc[-1])
-        w52h  = float(c.max()); w52l = float(c.min())
+        # ── Bollinger Bands ───────────────────────────────────────────────────────
+        bb_m = c.rolling(20).mean()
+        bb_s = c.rolling(20).std()
+        bb_u = float((bb_m + 2*bb_s).iloc[-1])
+        bb_l = float((bb_m - 2*bb_s).iloc[-1])
 
+        # ── 52-week range ─────────────────────────────────────────────────────────
+        w52h = float(c.max()); w52l = float(c.min())
+        pct_from_high = (ltp - w52h) / w52h * 100
+
+        # ── Volume (5-day avg vs 20-day avg) ──────────────────────────────────────
+        vol_ma20  = float(vol.rolling(20).mean().iloc[-1]) if len(vol) >= 20 else None
+        vol_5d    = float(vol.tail(5).mean())              if len(vol) >= 5  else None
+        vol_ratio = round(vol_5d / vol_ma20, 2) if (vol_ma20 and vol_5d and vol_ma20 > 0) else None
+        price_5d_ago = float(c.iloc[-6]) if len(c) > 5 else None
+
+        # ── Trend ─────────────────────────────────────────────────────────────────
         trend = ('UPTREND'   if ltp > ma50 > ma200 else
                  'DOWNTREND' if ltp < ma50 < ma200 else 'SIDEWAYS')
-        bull  = sum([rsi_v < 30, mh > 0, trend == 'UPTREND',  ltp < bb_l * 1.02])
-        bear  = sum([rsi_v > 70, mh < 0, trend == 'DOWNTREND', ltp > bb_u * 0.98])
-        call  = 'BUY' if bull > bear else ('REDUCE' if bear > bull else 'HOLD')
+
+        # ── Fundamentals ─────────────────────────────────────────────────────────
+        try:   info = t.info
+        except: info = {}
+        pe_val  = sf(info.get('trailingPE'))
+        roe_val = sf(info.get('returnOnEquity'))
+        rev_g   = sf(info.get('revenueGrowth'))
+
+        # ── WEIGHTED SCORE ────────────────────────────────────────────────────────
+        # Range: approx -12 to +12
+        # BUY >= +4  |  HOLD -3 to +3  |  REDUCE <= -4
+        score = 0
+
+        # 1. RSI — momentum / oversold-overbought (-3 to +3)
+        if   rsi_v < 25: score += 3   # deeply oversold — strong buy signal
+        elif rsi_v < 35: score += 2   # oversold
+        elif rsi_v < 45: score += 1   # mildly weak — slight edge to buyers
+        elif rsi_v < 55: pass          # neutral zone
+        elif rsi_v < 65: score -= 1   # building overbought
+        elif rsi_v < 75: score -= 2   # overbought
+        else:            score -= 3   # extremely overbought
+
+        # 2. MACD histogram — momentum direction (-2 to +2)
+        if   mh_cur > 0 and mh_cur >= mh_prev: score += 2  # bullish & strengthening
+        elif mh_cur > 0:                        score += 1  # bullish but fading
+        elif mh_cur < 0 and mh_cur > mh_prev:  score -= 1  # bearish but recovering
+        else:                                   score -= 2  # bearish & deepening
+
+        # 3. Trend via moving averages (-2 to +2)
+        if   ltp > ma50 > ma200: score += 2   # classic uptrend
+        elif ltp > ma200:        score += 1   # above long-term MA at least
+        elif ltp > ma50:         score -= 1   # mixed (above medium, below long)
+        else:                    score -= 2   # below both = downtrend
+
+        # 4. Bollinger Bands position (-1 to +1)
+        if   ltp <= bb_l * 1.02: score += 1   # near lower band = potential bounce
+        elif ltp >= bb_u * 0.98: score -= 1   # near upper band = stretched
+
+        # 5. Volume confirmation (-1 to +1)
+        # High volume on a rising price = conviction; high vol on falling = distribution
+        if vol_ratio and price_5d_ago:
+            if   vol_ratio > 1.2 and ltp >= price_5d_ago: score += 1
+            elif vol_ratio > 1.2 and ltp <  price_5d_ago: score -= 1
+
+        # 6. 52-week position (-1 to +1)
+        if   pct_from_high < -40: score += 1   # deep correction = potential value
+        elif pct_from_high > -5:  score -= 1   # near 52W high = limited near-term upside
+
+        # 7. P/E ratio (-1 to +1)
+        if   pe_val and 0 < pe_val < 15: score += 1   # cheap valuation
+        elif pe_val and pe_val > 50:     score -= 1   # expensive
+
+        # 8. Return on Equity (0 to +1)
+        if roe_val and roe_val > 0.15: score += 1   # company efficiently earns >15% on equity
+
+        # 9. Revenue growth (-1 to 0)
+        if rev_g and rev_g < 0: score -= 1   # shrinking revenue is a red flag
+
+        # ── FINAL SIGNAL ──────────────────────────────────────────────────────────
+        if   score >= 4:  call = 'BUY'
+        elif score <= -4: call = 'REDUCE'
+        else:             call = 'HOLD'
 
         def ret(n): return round((ltp/float(c.iloc[-n])-1)*100,1) if len(c)>n else None
 
-        try:   info = t.info
-        except: info = {}
         try:   news = [{'title':n.get('title',''),'link':n.get('link',''),'publisher':n.get('publisher','')} for n in (t.news or [])[:5]]
         except: news = []
 
         return sym, {
-            'rsi': round(rsi_v,1), 'macd_hist': round(mh,3), 'macd_bullish': mh > 0,
-            'trend': trend, 'call': call,
+            'rsi': round(rsi_v,1),
+            'macd_hist': round(mh_cur,3), 'macd_bullish': mh_cur > 0,
+            'macd_strengthening': bool(mh_cur > mh_prev),
+            'trend': trend, 'call': call, 'score': score,
             'ma20': round(ma20,2), 'ma50': round(ma50,2), 'ma200': round(ma200,2),
             'bb_upper': round(bb_u,2), 'bb_lower': round(bb_l,2),
             'w52_high': round(w52h,2), 'w52_low': round(w52l,2),
-            'from_high': round((ltp-w52h)/w52h*100,1),
+            'from_high': round(pct_from_high,1),
+            'vol_ratio': vol_ratio,
             'ret_1m': ret(21), 'ret_3m': ret(63), 'ret_6m': ret(126),
-            'pe': sf(info.get('trailingPE')), 'pb': sf(info.get('priceToBook')),
-            'roe': sf(info.get('returnOnEquity')), 'eps': sf(info.get('trailingEps')),
-            'rev_growth': sf(info.get('revenueGrowth')),
+            'pe': pe_val, 'pb': sf(info.get('priceToBook')),
+            'roe': roe_val, 'eps': sf(info.get('trailingEps')),
+            'div_yield': sf(info.get('dividendYield')),
+            'rev_growth': rev_g,
             'profit_margin': sf(info.get('profitMargins')),
             'mkt_cap': info.get('marketCap'),
             'sector': info.get('sector',''), 'industry': info.get('industry',''),

@@ -1128,56 +1128,91 @@ function doSort(key) {
 function buildReasoning(a, ltp) {
   const pts = [];
 
-  // RSI
+  // 1. RSI — oversold/overbought momentum
   if (a.rsi != null) {
-    if (a.rsi < 25) pts.push({type:'bull', text:`<strong>RSI is very low (${a.rsi})</strong> — The stock has been sold off heavily and looks deeply oversold. Think of it like a rubber band stretched too far: it often snaps back. This is one of the stronger buying signals.`});
-    else if (a.rsi < 35) pts.push({type:'bull', text:`<strong>RSI is ${a.rsi} (oversold)</strong> — The stock has been falling and may be close to a reversal. More selling has happened than is probably justified. Worth watching for a bounce.`});
-    else if (a.rsi < 50) pts.push({type:'note', text:`<strong>RSI is ${a.rsi} (mildly weak)</strong> — Momentum is slightly below neutral. The stock isn't in crisis, but buyers haven't taken control yet.`});
-    else if (a.rsi < 60) pts.push({type:'note', text:`<strong>RSI is ${a.rsi} (neutral)</strong> — The stock is balanced between buyers and sellers. No strong signal in either direction from momentum alone.`});
-    else if (a.rsi < 70) pts.push({type:'note', text:`<strong>RSI is ${a.rsi} (building momentum)</strong> — Buyers are in control and momentum is strong, but not yet at extreme levels. This is healthy in an uptrend.`});
-    else if (a.rsi < 80) pts.push({type:'bear', text:`<strong>RSI is ${a.rsi} (overbought)</strong> — The stock has risen a lot quickly and may be getting expensive. A pullback or pause is common at these levels. Reduces upside in the short term.`});
-    else pts.push({type:'bear', text:`<strong>RSI is ${a.rsi} (very overbought)</strong> — Extreme buying has pushed the stock well above normal levels. Risk of a sharp pullback is higher here. Not a good time to be adding.`});
+    if      (a.rsi < 25) pts.push({type:'bull', text:`<strong>RSI is very low (${a.rsi}) — deeply oversold</strong> — The stock has been sold off heavily. Think of it like a rubber band stretched too far: it often snaps back. This contributed +3 points to the score.`});
+    else if (a.rsi < 35) pts.push({type:'bull', text:`<strong>RSI is ${a.rsi} (oversold)</strong> — More selling has happened than is probably justified. The stock may be approaching a reversal point. +2 points.`});
+    else if (a.rsi < 45) pts.push({type:'bull', text:`<strong>RSI is ${a.rsi} (mildly weak)</strong> — Momentum is slightly below neutral. Not a crisis, but buyers haven't taken full control yet. A slight positive (+1 point).`});
+    else if (a.rsi < 55) pts.push({type:'note', text:`<strong>RSI is ${a.rsi} (neutral)</strong> — Perfectly balanced between buyers and sellers. No signal either way from momentum alone. 0 points.`});
+    else if (a.rsi < 65) pts.push({type:'bear', text:`<strong>RSI is ${a.rsi} (building overbought)</strong> — Buyers are slightly stretched. The stock has had a good run and momentum is starting to get risky. −1 point.`});
+    else if (a.rsi < 75) pts.push({type:'bear', text:`<strong>RSI is ${a.rsi} (overbought)</strong> — The stock has risen quickly and is statistically stretched. Pullbacks are common at these levels. −2 points.`});
+    else                 pts.push({type:'bear', text:`<strong>RSI is ${a.rsi} (extremely overbought)</strong> — Extreme buying has pushed the stock well beyond normal levels. Risk of a sharp pullback is high. −3 points.`});
   }
 
-  // MACD
+  // 2. MACD — momentum direction + whether it's strengthening
   if (a.macd_bullish != null) {
-    if (a.macd_bullish) pts.push({type:'bull', text:`<strong>MACD is bullish</strong> — The short-term price average (12 days) has moved above the long-term one (26 days). This means recent momentum is improving and buyers are gaining control. Think of it as short-term energy turning positive.`});
-    else pts.push({type:'bear', text:`<strong>MACD is bearish</strong> — The short-term price average has dipped below the long-term one. Momentum is weakening and sellers currently have the edge. This is a caution sign.`});
+    const str = a.macd_strengthening;
+    if (a.macd_bullish && str)
+      pts.push({type:'bull', text:`<strong>MACD is bullish and strengthening</strong> — Short-term momentum (12-day average) is above long-term (26-day) AND the gap is growing. This is the strongest MACD signal: buyers are accelerating. +2 points.`});
+    else if (a.macd_bullish)
+      pts.push({type:'bull', text:`<strong>MACD is bullish but fading</strong> — Short-term momentum is still above long-term, which is positive, but the gap is starting to narrow. Buyers are in control but losing pace. +1 point.`});
+    else if (!a.macd_bullish && str)
+      pts.push({type:'note', text:`<strong>MACD is bearish but recovering</strong> — Momentum is still negative, but the histogram is rising (the bearish force is weakening). Could be an early sign of a turn. −1 point.`});
+    else
+      pts.push({type:'bear', text:`<strong>MACD is bearish and deepening</strong> — Short-term momentum is below long-term AND falling further. Sellers are in control and accelerating. −2 points.`});
   }
 
-  // Trend
+  // 3. Trend — price vs MA50 vs MA200
   if (a.trend) {
-    if (a.trend==='UPTREND') pts.push({type:'bull', text:`<strong>Stock is in an uptrend</strong> — The price is above both its 50-day and 200-day moving averages. This means the direction of travel has been up for months. Trading with the trend is generally safer than against it.`});
-    else if (a.trend==='DOWNTREND') pts.push({type:'bear', text:`<strong>Stock is in a downtrend</strong> — The price is below both its 50-day and 200-day moving averages. The long-term direction is down. Be careful: catching a falling stock can be risky without a clear reversal signal.`});
-    else pts.push({type:'note', text:`<strong>Stock is moving sideways</strong> — No clear up or down direction right now. The stock is in a consolidation phase. These can break either way, so it's best to wait for a clearer signal before acting.`});
+    if (a.trend==='UPTREND')
+      pts.push({type:'bull', text:`<strong>Stock is in an uptrend</strong> — Price is above both its 50-day and 200-day moving averages (MA50 > MA200). This means the direction has been up for months. Trading with the trend is safer than against it. +2 points.`});
+    else if (a.trend==='DOWNTREND')
+      pts.push({type:'bear', text:`<strong>Stock is in a downtrend</strong> — Price is below both its 50-day and 200-day moving averages. The long-term direction is down. Buying into a downtrend is risky without a confirmed reversal signal. −2 points.`});
+    else if (a.ma200!=null && ltp!=null && ltp > a.ma200)
+      pts.push({type:'note', text:`<strong>Mixed trend — above 200-day but below 50-day</strong> — The stock is above its long-term average (healthy), but has pulled back below the medium-term one. Could be a correction within a longer uptrend. +1 point.`});
+    else
+      pts.push({type:'note', text:`<strong>Mixed trend — above 50-day but below 200-day</strong> — The stock has bounced above its medium-term average but is still below the long-term. Possible recovery, but not confirmed yet. −1 point.`});
   }
 
-  // Bollinger Bands
+  // 4. Bollinger Bands — price at statistical extremes
   if (a.bb_lower!=null && ltp!=null) {
-    if (ltp<=a.bb_lower*1.02) pts.push({type:'bull', text:`<strong>Near Bollinger Band lower boundary</strong> — The price is touching or near the lower statistical boundary of normal price movement. Stocks at this level often bounce back toward the middle, making it a potential entry point.`});
-    else if (ltp>=a.bb_upper*0.98) pts.push({type:'bear', text:`<strong>Near Bollinger Band upper boundary</strong> — The price is stretched near the upper end of its statistical range. The stock may be due for a pause or pullback as it rarely stays at extremes for long.`});
+    if      (ltp<=a.bb_lower*1.02) pts.push({type:'bull', text:`<strong>Near Bollinger Band lower boundary</strong> — The price is at the lower edge of its statistically normal range. Stocks here often bounce back toward the middle (mean reversion). This is a potential low-risk entry point. +1 point.`});
+    else if (ltp>=a.bb_upper*0.98) pts.push({type:'bear', text:`<strong>Near Bollinger Band upper boundary</strong> — The price is stretched to the statistical upper extreme. It can stay high in a strong uptrend, but corrections are more likely here. −1 point.`});
   }
 
-  // 52-week position
+  // 5. Volume confirmation — is the market backing the move?
+  if (a.vol_ratio != null) {
+    if (a.vol_ratio > 1.2) {
+      const priceUp = ltp != null; // we can check trend as proxy
+      if (a.trend === 'UPTREND' || (a.macd_bullish === true))
+        pts.push({type:'bull', text:`<strong>High volume (${a.vol_ratio.toFixed(1)}× average) on an upward move</strong> — Volume is ${Math.round((a.vol_ratio-1)*100)}% above the 20-day average, and the price is rising. When more shares trade on rising days, it means real conviction — institutions and big traders are buying, not just retail. +1 point.`});
+      else
+        pts.push({type:'bear', text:`<strong>High volume (${a.vol_ratio.toFixed(1)}× average) on a downward move</strong> — Volume is ${Math.round((a.vol_ratio-1)*100)}% above normal, but the price is falling. Heavy volume on declines means sellers are aggressive — this is a warning sign, not a dip to buy. −1 point.`});
+    } else if (a.vol_ratio < 0.7) {
+      pts.push({type:'note', text:`<strong>Low volume (${a.vol_ratio.toFixed(1)}× average)</strong> — Trading activity is well below normal. Low-volume moves are less reliable — they can reverse easily when the market picks up. Treat any signal here with less confidence.`});
+    }
+  }
+
+  // 6. 52-week position — where is the stock relative to its year range?
   if (a.from_high!=null) {
-    if (a.from_high<-50) pts.push({type:'note', text:`<strong>${Math.abs(a.from_high).toFixed(0)}% below its 52-week high</strong> — The stock has fallen sharply from its peak. This could mean a genuine bargain, or it could mean the business has problems. Always worth checking why it fell before buying.`});
-    else if (a.from_high<-30) pts.push({type:'note', text:`<strong>${Math.abs(a.from_high).toFixed(0)}% below 52-week high</strong> — A significant correction from the peak. Worth investigating if it's an opportunity or a warning sign.`});
-    else if (a.from_high>-5) pts.push({type:'note', text:`<strong>Near 52-week high</strong> — The stock is trading close to its highest price in a year. This shows strength, but also means there's less room to run before facing resistance.`});
+    if      (a.from_high < -50) pts.push({type:'bull', text:`<strong>${Math.abs(a.from_high).toFixed(0)}% below 52-week high — deep correction</strong> — The stock is nearly half off its peak. This could mean genuine value, but always check why it fell. Deep corrections can mean business problems or sector headwinds. +1 point for potential value.`});
+    else if (a.from_high < -40) pts.push({type:'bull', text:`<strong>${Math.abs(a.from_high).toFixed(0)}% below 52-week high</strong> — A significant correction from the peak. More room to recover if the fundamentals are intact. +1 point.`});
+    else if (a.from_high < -15) pts.push({type:'note', text:`<strong>${Math.abs(a.from_high).toFixed(0)}% below 52-week high</strong> — A moderate pullback from the peak. Normal in any healthy stock. No major signal either way.`});
+    else if (a.from_high > -5)  pts.push({type:'bear', text:`<strong>Near 52-week high (only ${Math.abs(a.from_high).toFixed(0)}% away)</strong> — The stock is close to its annual peak. This shows strength, but also means there's not much cheap runway left before facing resistance from previous sellers. −1 point.`});
   }
 
-  // P/E valuation
-  if (a.pe!=null) {
-    if (a.pe<10) pts.push({type:'bull', text:`<strong>P/E ratio of ${a.pe.toFixed(1)}x is very low</strong> — You're paying only ₹${a.pe.toFixed(1)} for every ₹1 the company earns per year. Very cheap by historical standards. Could be a bargain or a value trap — worth investigating.`});
-    else if (a.pe<20) pts.push({type:'note', text:`<strong>P/E ratio of ${a.pe.toFixed(1)}x is reasonable</strong> — A fair price relative to earnings. Not too expensive, not too cheap.`});
-    else if (a.pe<40) pts.push({type:'note', text:`<strong>P/E ratio of ${a.pe.toFixed(1)}x is moderate</strong> — The market is paying a growth premium. Acceptable if the company is growing earnings fast.`});
-    else if (a.pe>40) pts.push({type:'bear', text:`<strong>P/E ratio of ${a.pe.toFixed(1)}x is high</strong> — The market has very high expectations built in. If growth disappoints, the stock can fall sharply. Higher risk from a valuation standpoint.`});
+  // 7. P/E valuation
+  if (a.pe != null && a.pe > 0) {
+    if      (a.pe < 10) pts.push({type:'bull', text:`<strong>P/E of ${a.pe.toFixed(1)}x — very cheap</strong> — You pay ₹${a.pe.toFixed(1)} for every ₹1 the company earns annually. That's historically low. Could be a bargain — or there may be concerns the market is pricing in. Worth investigating. +1 point.`});
+    else if (a.pe < 20) pts.push({type:'bull', text:`<strong>P/E of ${a.pe.toFixed(1)}x — fair value</strong> — A reasonable price relative to earnings. Not too expensive, not too cheap. A comfortable valuation zone. +1 point.`});
+    else if (a.pe < 40) pts.push({type:'note', text:`<strong>P/E of ${a.pe.toFixed(1)}x — growth premium</strong> — The market is paying a premium, likely expecting strong future earnings. Acceptable if the company is growing fast; risky if growth slows. Neutral (0 points).`});
+    else                pts.push({type:'bear', text:`<strong>P/E of ${a.pe.toFixed(1)}x — expensive</strong> — Very high price relative to earnings. The market has baked in a lot of optimism. If earnings disappoint even slightly, the stock can drop sharply. −1 point.`});
   }
 
-  // ROE
-  if (a.roe!=null) {
-    const roePct = a.roe*100;
-    if (roePct>20) pts.push({type:'bull', text:`<strong>Return on Equity (ROE) is ${roePct.toFixed(1)}%</strong> — The company earns a high return on shareholder money. A ROE above 15-20% is generally considered excellent and shows a well-run business.`});
-    else if (roePct<8) pts.push({type:'bear', text:`<strong>Return on Equity (ROE) is ${roePct.toFixed(1)}%</strong> — The company earns a low return on its equity. This means management isn't generating strong profits from the money invested in the business.`});
+  // 8. ROE — management quality
+  if (a.roe != null) {
+    const roePct = (a.roe * 100);
+    if      (roePct > 20) pts.push({type:'bull', text:`<strong>Return on Equity (ROE) is ${roePct.toFixed(1)}%</strong> — Excellent. The company earns ₹${roePct.toFixed(1)} for every ₹100 of shareholder money. Above 15-20% is considered best-in-class and reflects a well-managed, competitive business. +1 point.`});
+    else if (roePct > 10) pts.push({type:'note', text:`<strong>Return on Equity (ROE) is ${roePct.toFixed(1)}%</strong> — Decent. The company is generating an acceptable return, though not outstanding. No penalty, no bonus.`});
+    else                  pts.push({type:'bear', text:`<strong>Return on Equity (ROE) is ${roePct.toFixed(1)}%</strong> — Low. The company isn't generating strong profits from shareholder investment. This can indicate weak competitive position or poor capital efficiency.`});
+  }
+
+  // 9. Revenue growth
+  if (a.rev_growth != null) {
+    const pct = (a.rev_growth * 100);
+    if      (pct > 15) pts.push({type:'bull', text:`<strong>Revenue growing at ${pct.toFixed(1)}% per year</strong> — Strong top-line growth. The business is expanding and capturing more customers or market share. A healthy sign for the company's future earnings.`});
+    else if (pct > 0)  pts.push({type:'note', text:`<strong>Revenue growing at ${pct.toFixed(1)}% per year</strong> — Modest but positive growth. The business is moving forward, just not rapidly.`});
+    else               pts.push({type:'bear', text:`<strong>Revenue is shrinking (${pct.toFixed(1)}%)</strong> — The company's sales are declining year-over-year. Falling revenue is a red flag — it can put pressure on margins and future earnings. −1 point.`});
   }
 
   return pts;
@@ -1236,16 +1271,41 @@ function renderPanelContent(sym) {
 
   let html='';
 
-  // ── Call + Full Reasoning ──
+  // ── Call + Score meter + Full Reasoning ──
   if (a.call) {
-    const callCls=a.call==='BUY'?'call-buy':a.call==='REDUCE'?'call-red':'call-hold';
-    const callDesc=a.call==='BUY'?'More signals point to upside than downside right now.':a.call==='REDUCE'?'More signals point to weakness. Consider reducing exposure.':'Signals are mixed. No strong case to buy more or sell right now.';
-    const reasons=buildReasoning(a,ltp);
+    const callCls  = a.call==='BUY'?'call-buy':a.call==='REDUCE'?'call-red':'call-hold';
+    const score    = a.score ?? null;
+    // Score bar: map -12..+12 to 0..100%
+    const scoreMax = 12;
+    const scorePct = score!=null ? Math.round(((score + scoreMax) / (scoreMax*2)) * 100) : 50;
+    const scoreCol = score!=null ? (score>=4?'var(--green)':score<=-4?'var(--red)':'var(--yellow)') : 'var(--muted)';
+    const callDesc = score!=null
+      ? (score>=7?'Very strong buy signal — most factors are aligned to the upside.':
+         score>=4?'More signals point to upside. Multiple factors are confirming each other.':
+         score<=-7?'Very strong reduce signal — most factors point to further weakness.':
+         score<=-4?'Bearish signals outweigh bullish ones. Consider reducing exposure.':
+         score>0?'Slightly more positive than negative — hold with a bullish lean.':
+         score<0?'Slightly more negative than positive — hold with a cautious lean.':
+         'Signals are perfectly balanced. No edge in either direction right now.')
+      : 'Signals are mixed. No strong case to buy more or sell right now.';
+    const reasons = buildReasoning(a,ltp);
     html+=`<div class="sp-call-block">
       <div class="sp-call-header">
         <span class="call-pill ${callCls} sp-call-big">${a.call}</span>
-        <span style="font-size:12px;color:var(--muted)">${callDesc}</span>
+        ${score!=null?`<span style="font-size:11px;color:${scoreCol};font-weight:700;background:var(--surface2);padding:2px 8px;border-radius:4px;border:1px solid var(--border)">Score ${score>0?'+':''}${score}/12</span>`:''}
+        <span style="font-size:12px;color:var(--muted);flex:1">${callDesc}</span>
       </div>
+      ${score!=null?`
+      <div style="margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-bottom:4px">
+          <span>REDUCE</span><span style="color:${scoreCol};font-weight:600">Score: ${score>0?'+':''}${score}</span><span>BUY</span>
+        </div>
+        <div style="height:6px;background:var(--surface2);border-radius:3px;overflow:hidden;position:relative">
+          <div style="position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--border)"></div>
+          <div style="height:100%;width:${scorePct}%;background:linear-gradient(to right,var(--red),var(--yellow) 40%,var(--green));border-radius:3px"></div>
+        </div>
+        <div style="font-size:10px;color:var(--muted);margin-top:4px">Based on 9 factors: RSI · MACD direction · Trend · Bollinger Bands · Volume · 52W position · P/E · ROE · Revenue growth</div>
+      </div>`:''}
       <ul class="sp-reasoning-list">
         ${reasons.map(r=>{
           const iconCls=r.type==='bull'?'icon-bull':r.type==='bear'?'icon-bear':'icon-note';
@@ -1600,48 +1660,25 @@ async function analyseWatchlistStock(sym) {
 
 function getWatchlistVerdict(a, ltp) {
   if (!a) return null;
-  let bull = 0;
-
-  // RSI signal
-  if (a.rsi != null) {
-    if (a.rsi < 35)      bull += 2;
-    else if (a.rsi < 50) bull += 1;
-    else if (a.rsi > 70) bull -= 2;
-    else if (a.rsi > 60) bull -= 1;
-  }
-  // MACD
-  if (a.macd_bullish === true)  bull += 1;
-  if (a.macd_bullish === false) bull -= 1;
-  // Trend
-  if (a.trend === 'UPTREND')   bull += 2;
-  if (a.trend === 'DOWNTREND') bull -= 2;
-  // Bollinger
-  if (ltp && a.bb_lower && ltp <= a.bb_lower * 1.02) bull += 1;
-  if (ltp && a.bb_upper && ltp >= a.bb_upper * 0.98) bull -= 1;
-  // 52W position
-  if (a.from_high != null) {
-    if (a.from_high < -40) bull += 1; // deep correction = potential value
-    if (a.from_high > -5)  bull -= 1; // near high = limited upside near-term
-  }
-  // Valuation (P/E)
-  if (a.pe != null) {
-    if (a.pe < 15 && a.pe > 0)  bull += 1;
-    if (a.pe > 50)              bull -= 1;
-  }
+  // Use the server-computed weighted score (9-factor, range -12 to +12)
+  // Falls back to a rough estimate if not available
+  const score = a.score ?? null;
+  if (score == null) return null;
 
   let label, color, desc;
-  if (bull >= 4)       { label='Strong Buy';      color='var(--green)';  desc='Multiple strong buy signals align. Technically and fundamentally attractive right now.'; }
-  else if (bull >= 2)  { label='Good Entry';       color='var(--green)';  desc='More signals are pointing up than down. Decent time to consider entering.'; }
-  else if (bull === 1) { label='Lean Buy';         color='#77c27e';       desc='Slightly more positive than negative. Okay to start a small position; watch for confirmation.'; }
-  else if (bull === 0) {
-    if (a.trend === 'UPTREND') { label='Wait for Dip';   color='var(--yellow)'; desc='Uptrend intact but no momentum edge yet. Wait for a small pullback to enter at a better price.'; }
-    else                        { label='Neutral – Watch'; color='var(--yellow)'; desc='Signals are balanced. No clear edge in either direction. Keep watching.'; }
+  if      (score >= 7)  { label='Strong Buy';      color='var(--green)';   desc=`Score +${score}: Very strong — most of the 9 factors are pointing up. Technically and fundamentally attractive.`; }
+  else if (score >= 4)  { label='Good Entry';       color='var(--green)';   desc=`Score +${score}: More signals bullish than bearish. Decent time to consider entering a position.`; }
+  else if (score >= 2)  { label='Lean Buy';         color='#77c27e';        desc=`Score +${score}: Slightly more positive than negative. Okay to start small; watch for more confirmation.`; }
+  else if (score === 1) { label='Slight Edge';      color='#a0c870';        desc=`Score +${score}: Marginal positive edge. Worth watching but not a conviction buy yet.`; }
+  else if (score === 0) {
+    if (a.trend === 'UPTREND') { label='Wait for Dip'; color='var(--yellow)'; desc='Score 0: Uptrend is intact but no momentum advantage right now. Wait for a pullback to enter cheaper.'; }
+    else                        { label='Neutral – Watch'; color='var(--yellow)'; desc='Score 0: Signals perfectly balanced. No clear edge in either direction. Stay on the sidelines.'; }
   }
-  else if (bull === -1) { label='Not Yet';         color='var(--orange)'; desc='Mild negative signals. Hold off — wait for the picture to improve before buying.'; }
-  else if (bull === -2 && a.trend !== 'DOWNTREND') { label='Avoid for Now'; color='var(--red)'; desc='Several signals are weak or negative. Better opportunities likely elsewhere.'; }
-  else                  { label='Stay Away';       color='var(--red)';    desc='Strong bearish signals. Buying here is fighting the market. High risk of further downside.'; }
+  else if (score >= -2) { label='Not Yet';          color='var(--orange)';  desc=`Score ${score}: Mild negative signals. Hold off and wait for the picture to improve.`; }
+  else if (score >= -4) { label='Avoid for Now';    color='var(--red)';     desc=`Score ${score}: Multiple signals are weak or negative. Better opportunities likely elsewhere right now.`; }
+  else                  { label='Stay Away';         color='var(--red)';     desc=`Score ${score}: Strong bearish pressure across multiple factors. High risk of further downside.`; }
 
-  return {label, color, desc, score: bull};
+  return {label, color, desc, score};
 }
 
 function buildWatchlistSignals(a, ltp) {
@@ -1710,7 +1747,10 @@ function renderWatchlistCard(sym) {
     const verdict = getWatchlistVerdict(a, ltp);
     const verdictHtml = verdict ? `
       <div class="wl-verdict" style="border-left-color:${verdict.color}">
-        <div class="wl-verdict-label" style="color:${verdict.color}">${verdict.label}</div>
+        <div class="wl-verdict-label" style="color:${verdict.color};display:flex;align-items:center;justify-content:space-between">
+          <span>${verdict.label}</span>
+          <span style="font-size:11px;font-weight:700;opacity:.85">${verdict.score > 0 ? '+' : ''}${verdict.score}/12</span>
+        </div>
         <div class="wl-verdict-desc">${verdict.desc}</div>
       </div>` : '';
 
