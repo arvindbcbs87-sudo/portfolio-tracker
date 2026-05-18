@@ -1,0 +1,356 @@
+#!/usr/bin/env python3
+"""
+Portfolio Tracker Server
+  /api/prices         - live LTP + day change  (cached 60s)
+  /api/analysis       - RSI, MACD, trend, fundamentals, news (cached 1h, pre-computed on start)
+  /api/chart          - 6-month price + indicator history for a single stock (cached 30min)
+  /api/portfolio      - GET/POST portfolio data (persisted to portfolio.json)
+  /api/analyse_stock  - analyse a single stock on demand, add to cache
+"""
+
+import json, time, threading, os, math
+import urllib.parse
+from http.server import HTTPServer, SimpleHTTPRequestHandler
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+PORT      = int(os.environ.get('PORT', 3000))
+SERVE_DIR = os.path.dirname(os.path.abspath(__file__))
+PORTFOLIO_FILE = os.path.join(SERVE_DIR, 'portfolio.json')
+SGB_SET   = {'SGBJUL28IV-GB', 'SGBJUN28-GB', 'SGBMAY29I'}
+
+import yfinance as yf
+print("yfinance ready")
+
+# ── Cache ──────────────────────────────────────────────────────────────────────
+_pc  = {'data':{}, 'ts':0, 'error':None, 'lock': threading.Lock()}
+_ac  = {'data':{}, 'ts':0, 'error':None, 'lock': threading.Lock()}
+_cc  = {}
+_ccl = threading.Lock()
+
+PRICE_TTL    = 60
+ANALYSIS_TTL = 3600
+CHART_TTL    = 1800
+
+ALL_SYMS = [
+    'BAJFINANCE','BAJAJFINSV','HDFCBANK','HINDUNILVR','JIOFIN','M&M',
+    'NTPC','ONGC','POWERGRID','RADIOCITY','RECLTD','RELIANCE',
+    'SUNPHARMA','SUVEN','TATAMOTORS','WIPRO','YESBANK',
+    'ALKYLAMINE','BATAINDIA','CAMPUS','DMART','HAPPSTMNDS','IOLCP',
+    'KOTAKBANK','LT','NSLNISP','POLYPLEX','RELAXO','SBICARD',
+    'SHREECEM','TATAPOWER','TCS'
+]
+
+def nse(sym):
+    return None if sym in SGB_SET else urllib.parse.quote(sym, safe='') + '.NS'
+
+def rsi14(s):
+    d = s.diff()
+    g = d.clip(lower=0).rolling(14).mean()
+    l = (-d.clip(upper=0)).rolling(14).mean()
+    return (100 - 100/(1 + g/l)).round(2)
+
+def sf(v):
+    try:
+        f = float(v)
+        return None if (math.isnan(f) or math.isinf(f)) else round(f, 4)
+    except: return None
+
+def clean(series):
+    return [sf(v) for v in series]
+
+# ── PRICES ─────────────────────────────────────────────────────────────────────
+def fetch_prices(symbols):
+    sm = {nse(s): s for s in symbols if nse(s)}
+    if not sm: return {}
+    ys, multi = list(sm.keys()), len(sm) > 1
+    g = 'ticker' if multi else 'column'
+    result = {}
+    try:
+        df = yf.download(ys, period='1d', interval='1m', progress=False,
+                         auto_adjust=True, group_by=g, threads=True, timeout=30)
+        if df is not None and not df.empty:
+            for y in ys:
+                try:
+                    c = (df['Close'] if not multi else df[y]['Close']).dropna()
+                    if not c.empty: result[sm[y]] = {'ltp': round(float(c.iloc[-1]), 2)}
+                except: pass
+    except Exception as e: print(f"Prices 1m error: {e}")
+    try:
+        df2 = yf.download(ys, period='5d', interval='1d', progress=False,
+                          auto_adjust=True, group_by=g, threads=True, timeout=30)
+        if df2 is not None and not df2.empty:
+            for y in ys:
+                orig = sm[y]
+                if orig not in result: continue
+                try:
+                    c = (df2['Close'] if not multi else df2[y]['Close']).dropna()
+                    if len(c) >= 2:
+                        prev, ltp = float(c.iloc[-2]), result[orig]['ltp']
+                        chg = ltp - prev
+                        result[orig].update({'change': round(chg,2), 'changePct': round(chg/prev*100,2) if prev else 0})
+                    else: result[orig].update({'change':0,'changePct':0})
+                except: result[orig].update({'change':0,'changePct':0})
+    except Exception as e: print(f"Prices 1d error: {e}")
+    return result
+
+# ── ANALYSIS (per-stock) ───────────────────────────────────────────────────────
+def analyse_one(sym):
+    y = nse(sym)
+    if not y: return sym, {'call':'HOLD','trend':'N/A','rsi':None,'news':[]}
+    try:
+        t = yf.Ticker(y)
+        h = t.history(period='1y', interval='1d')
+        if h.empty: return sym, {'call':'HOLD','trend':'N/A','rsi':None,'news':[]}
+        c = h['Close']; ltp = float(c.iloc[-1])
+
+        ma20  = float(c.rolling(20).mean().iloc[-1])
+        ma50  = float(c.rolling(50).mean().iloc[-1])
+        ma200 = float(c.rolling(200).mean().iloc[-1])
+        rsi_v = float(rsi14(c).iloc[-1])
+
+        ema12 = c.ewm(span=12).mean()
+        ema26 = c.ewm(span=26).mean()
+        macd  = ema12 - ema26
+        sig   = macd.ewm(span=9).mean()
+        mh    = float((macd - sig).iloc[-1])
+
+        bb_m  = c.rolling(20).mean()
+        bb_s  = c.rolling(20).std()
+        bb_u  = float((bb_m + 2*bb_s).iloc[-1])
+        bb_l  = float((bb_m - 2*bb_s).iloc[-1])
+        w52h  = float(c.max()); w52l = float(c.min())
+
+        trend = ('UPTREND'   if ltp > ma50 > ma200 else
+                 'DOWNTREND' if ltp < ma50 < ma200 else 'SIDEWAYS')
+        bull  = sum([rsi_v < 30, mh > 0, trend == 'UPTREND',  ltp < bb_l * 1.02])
+        bear  = sum([rsi_v > 70, mh < 0, trend == 'DOWNTREND', ltp > bb_u * 0.98])
+        call  = 'BUY' if bull > bear else ('REDUCE' if bear > bull else 'HOLD')
+
+        def ret(n): return round((ltp/float(c.iloc[-n])-1)*100,1) if len(c)>n else None
+
+        try:   info = t.info
+        except: info = {}
+        try:   news = [{'title':n.get('title',''),'link':n.get('link',''),'publisher':n.get('publisher','')} for n in (t.news or [])[:5]]
+        except: news = []
+
+        return sym, {
+            'rsi': round(rsi_v,1), 'macd_hist': round(mh,3), 'macd_bullish': mh > 0,
+            'trend': trend, 'call': call,
+            'ma20': round(ma20,2), 'ma50': round(ma50,2), 'ma200': round(ma200,2),
+            'bb_upper': round(bb_u,2), 'bb_lower': round(bb_l,2),
+            'w52_high': round(w52h,2), 'w52_low': round(w52l,2),
+            'from_high': round((ltp-w52h)/w52h*100,1),
+            'ret_1m': ret(21), 'ret_3m': ret(63), 'ret_6m': ret(126),
+            'pe': sf(info.get('trailingPE')), 'pb': sf(info.get('priceToBook')),
+            'roe': sf(info.get('returnOnEquity')), 'eps': sf(info.get('trailingEps')),
+            'rev_growth': sf(info.get('revenueGrowth')),
+            'profit_margin': sf(info.get('profitMargins')),
+            'mkt_cap': info.get('marketCap'),
+            'sector': info.get('sector',''), 'industry': info.get('industry',''),
+            'news': news,
+        }
+    except Exception as e:
+        print(f"  analyse_one {sym}: {e}")
+        return sym, {'call':'HOLD','trend':'N/A','rsi':None,'news':[],'error':str(e)}
+
+def fetch_analysis(symbols):
+    results = {}
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        futures = {ex.submit(analyse_one, s): s for s in symbols}
+        for future in as_completed(futures):
+            try:
+                sym, data = future.result()
+                results[sym] = data
+                print(f"  {sym}: {data.get('trend','?')} RSI={data.get('rsi','?')} {data.get('call','?')}")
+            except Exception as e:
+                s = futures[future]
+                print(f"  {s} error: {e}")
+                results[s] = {'call':'HOLD','trend':'N/A','rsi':None,'news':[]}
+    return results
+
+# ── CHART (single stock) ───────────────────────────────────────────────────────
+def fetch_chart(sym):
+    y = nse(sym)
+    if not y: return {}
+    h = yf.Ticker(y).history(period='6mo', interval='1d')
+    if h.empty: return {}
+    c = h['Close']; v = h['Volume']
+    ma20 = c.rolling(20).mean()
+    ma50 = c.rolling(50).mean()
+    bb_m = c.rolling(20).mean()
+    bb_u = bb_m + 2*c.rolling(20).std()
+    bb_l = bb_m - 2*c.rolling(20).std()
+    rs   = rsi14(c)
+    e12  = c.ewm(span=12).mean(); e26 = c.ewm(span=26).mean()
+    macd = e12 - e26; sig = macd.ewm(span=9).mean(); mh = macd - sig
+    return {
+        'dates':       [d.strftime('%d %b') for d in h.index],
+        'close':       clean(c),
+        'ma20':        clean(ma20),  'ma50':        clean(ma50),
+        'bb_upper':    clean(bb_u),  'bb_lower':    clean(bb_l),
+        'rsi':         clean(rs),
+        'macd':        clean(macd),  'macd_signal': clean(sig),
+        'macd_hist':   clean(mh),
+        'volume':      [int(x) for x in v],
+    }
+
+# ── PORTFOLIO FILE ─────────────────────────────────────────────────────────────
+_pf_lock = threading.Lock()
+
+def load_portfolio():
+    try:
+        if os.path.exists(PORTFOLIO_FILE):
+            with open(PORTFOLIO_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"Portfolio load error: {e}")
+    return None
+
+def save_portfolio(data):
+    try:
+        with _pf_lock:
+            with open(PORTFOLIO_FILE, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2, default=str)
+        return True
+    except Exception as e:
+        print(f"Portfolio save error: {e}")
+        return False
+
+# ── HTTP HANDLER ───────────────────────────────────────────────────────────────
+class Handler(SimpleHTTPRequestHandler):
+    def __init__(self, *a, **k): super().__init__(*a, directory=SERVE_DIR, **k)
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self._cors()
+        self.end_headers()
+
+    def do_GET(self):
+        p = urllib.parse.urlparse(self.path)
+        q = urllib.parse.parse_qs(p.query)
+        if   p.path == '/api/prices':         self._prices(q)
+        elif p.path == '/api/analysis':        self._analysis(q)
+        elif p.path == '/api/chart':           self._chart(q)
+        elif p.path == '/api/portfolio':       self._get_portfolio()
+        elif p.path == '/api/analyse_stock':   self._analyse_stock(q)
+        else: super().do_GET()
+
+    def do_POST(self):
+        p = urllib.parse.urlparse(self.path)
+        if p.path == '/api/portfolio':
+            self._post_portfolio()
+        else:
+            self.send_response(404); self.end_headers()
+
+    def _get_portfolio(self):
+        data = load_portfolio()
+        if data:
+            self._json({'ok': True, 'portfolio': data})
+        else:
+            self._json({'ok': False, 'portfolio': None})
+
+    def _post_portfolio(self):
+        try:
+            length = int(self.headers.get('Content-Length', 0))
+            body   = self.rfile.read(length)
+            data   = json.loads(body.decode('utf-8'))
+            ok = save_portfolio(data)
+            self._json({'ok': ok})
+        except Exception as e:
+            print(f"POST /api/portfolio error: {e}")
+            self._json({'ok': False, 'error': str(e)})
+
+    def _analyse_stock(self, q):
+        sym = q.get('symbol',[''])[0].strip().upper()
+        if not sym:
+            self._json({'error': 'no symbol'}); return
+        # Check cache first (skip if older than 1h)
+        with _ac['lock']:
+            cached = _ac['data'].get(sym)
+            age    = time.time() - _ac['ts']
+        if cached and age < ANALYSIS_TTL:
+            self._json({'symbol': sym, 'analysis': cached, 'cached': True})
+            return
+        # Run fresh analysis in-thread (blocking but quick for 1 stock)
+        print(f"On-demand analysis: {sym}")
+        _, result = analyse_one(sym)
+        with _ac['lock']:
+            _ac['data'][sym] = result
+        self._json({'symbol': sym, 'analysis': result, 'cached': False})
+
+    def _prices(self, q):
+        syms = [s.strip() for s in urllib.parse.unquote(q.get('symbols',[''])[0]).split(',') if s.strip()]
+        now  = time.time()
+        with _pc['lock']:
+            if now - _pc['ts'] >= PRICE_TTL:
+                try:
+                    print(f"Fetching prices ({len(syms)} symbols)...")
+                    _pc['data'] = fetch_prices(syms) if syms else {}
+                    _pc['ts'] = now; _pc['error'] = None
+                    print(f"  Got {len(_pc['data'])} prices")
+                except Exception as e:
+                    _pc['error'] = str(e); print(f"  Error: {e}")
+        self._json({'prices': _pc['data'], 'ts': _pc['ts'], 'error': _pc['error'],
+                    'next_refresh_in': max(0, int(PRICE_TTL - (now - _pc['ts'])))})
+
+    def _analysis(self, q):
+        syms      = [s.strip() for s in urllib.parse.unquote(q.get('symbols',[''])[0]).split(',') if s.strip()]
+        now       = time.time()
+        computing = _ac['ts'] == 0
+        stale     = not computing and (now - _ac['ts'] >= ANALYSIS_TTL)
+        if stale:
+            def bg():
+                d = fetch_analysis(syms or ALL_SYMS)
+                with _ac['lock']: _ac['data'] = d; _ac['ts'] = time.time()
+            threading.Thread(target=bg, daemon=True).start()
+        self._json({'analysis': _ac['data'], 'ts': _ac['ts'],
+                    'computing': computing, 'stale': stale,
+                    'next_refresh_in': max(0, int(ANALYSIS_TTL - (now - _ac['ts']))) if not computing else 0})
+
+    def _chart(self, q):
+        sym = q.get('symbol',[''])[0].strip()
+        if not sym: self._json({'error':'no symbol'}); return
+        now = time.time()
+        with _ccl:
+            if now - _cc.get(sym,{}).get('ts',0) >= CHART_TTL:
+                try:
+                    print(f"Fetching chart: {sym}")
+                    _cc[sym] = {'data': fetch_chart(sym), 'ts': now}
+                except Exception as e:
+                    print(f"Chart error {sym}: {e}")
+                    _cc[sym] = {'data': {}, 'ts': now}
+        self._json({'chart': _cc.get(sym,{}).get('data',{}), 'symbol': sym})
+
+    def _cors(self):
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+
+    def _json(self, obj):
+        b = json.dumps(obj, default=str).encode('utf-8')
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json; charset=utf-8')
+        self.send_header('Content-Length', str(len(b)))
+        self._cors()
+        self.send_header('Cache-Control', 'no-cache')
+        self.end_headers()
+        self.wfile.write(b)
+
+    def log_message(self, *_): pass
+
+# ── ENTRY ──────────────────────────────────────────────────────────────────────
+if __name__ == '__main__':
+    os.chdir(SERVE_DIR)
+    print(f"\n{'='*54}")
+    print(f"  Portfolio Tracker  --  live + analysis + charts")
+    print(f"  http://localhost:{PORT}/portfolio-tracker.html")
+    print(f"{'='*54}\n")
+
+    def precompute():
+        print("Pre-computing analysis in background (takes ~60s)...")
+        d = fetch_analysis(ALL_SYMS)
+        with _ac['lock']: _ac['data'] = d; _ac['ts'] = time.time()
+        print(f"Analysis ready: {len(d)} stocks")
+    threading.Thread(target=precompute, daemon=True).start()
+
+    HTTPServer(('', PORT), Handler).serve_forever()

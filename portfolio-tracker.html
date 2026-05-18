@@ -1,0 +1,1459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Portfolio Tracker</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0d1117; --surface: #161b22; --surface2: #21262d;
+      --border: #30363d; --text: #e6edf3; --muted: #8b949e;
+      --green: #3fb950; --red: #f85149; --blue: #58a6ff;
+      --yellow: #d29922; --purple: #bc8cff; --orange: #e3954a;
+    }
+    body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-height: 100vh; }
+
+    /* ── HEADER ── */
+    header {
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 12px 24px; display: flex; align-items: center;
+      justify-content: space-between; position: sticky; top: 0; z-index: 100;
+    }
+    header h1 { font-size: 16px; font-weight: 700; }
+    .header-right { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .live-badge {
+      display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted);
+      cursor: pointer; padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border);
+      transition: background 0.15s; user-select: none;
+    }
+    .live-badge:hover { background: var(--surface2); }
+    .live-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .dot-green  { background: var(--green);  animation: pulse 2s infinite; }
+    .dot-grey   { background: var(--muted); }
+    .dot-yellow { background: var(--yellow); animation: pulse 1s infinite; }
+    .dot-red    { background: var(--red); }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.25} }
+    #analysisBadge { font-size: 11px; color: var(--muted); display:flex; align-items:center; gap:4px; }
+
+    /* ── LAYOUT ── */
+    .main { max-width: 1600px; margin: 0 auto; padding: 20px 24px; }
+    .summary-grid { display: grid; grid-template-columns: repeat(5,1fr); gap: 12px; margin-bottom: 20px; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px 18px; }
+    .card-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
+    .card-value { font-size: 20px; font-weight: 700; }
+    .card-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+    .green { color: var(--green); } .red { color: var(--red); } .blue { color: var(--blue); }
+
+    /* ── TABS ── */
+    .tabs { display: flex; gap: 2px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
+    .tab { padding: 9px 18px; cursor: pointer; font-size: 13px; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; border-top: none; border-left: none; border-right: none; transition: color .15s; }
+    .tab:hover { color: var(--text); }
+    .tab.active { color: var(--blue); border-bottom-color: var(--blue); font-weight: 500; }
+
+    /* ── TABLE ── */
+    .table-container { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+    .table-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border); gap: 8px; flex-wrap: wrap; }
+    .table-header h2 { font-size: 14px; font-weight: 600; }
+    .table-controls { display: flex; gap: 8px; align-items: center; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    thead th { padding: 10px 14px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); font-weight: 500; cursor: pointer; white-space: nowrap; border-bottom: 1px solid var(--border); background: var(--surface2); user-select: none; }
+    thead th:hover { color: var(--text); }
+    tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: var(--surface2); }
+    td { padding: 10px 14px; white-space: nowrap; vertical-align: middle; }
+    .stock-link { font-weight: 600; font-size: 13.5px; cursor: pointer; color: var(--text); transition: color .15s; }
+    .stock-link:hover { color: var(--blue); text-decoration: underline; }
+    .portfolio-badge { display: inline-block; font-size: 10px; padding: 1px 5px; border-radius: 3px; background: var(--surface2); color: var(--muted); margin-left: 6px; vertical-align: middle; border: 1px solid var(--border); }
+    td.editable { cursor: pointer; }
+    td.editable:hover { color: var(--blue); }
+    .td-right { text-align: right; }
+    .pnl-pos { color: var(--green); } .pnl-neg { color: var(--red); }
+    .day-chg { font-size: 11px; margin-top: 2px; }
+    .sort-asc::after { content: ' \2191'; } .sort-desc::after { content: ' \2193'; }
+
+    /* ── FLASH ── */
+    @keyframes flashUp   { 0%{background:rgba(63,185,80,.25)} 100%{background:transparent} }
+    @keyframes flashDown { 0%{background:rgba(248,81,73,.25)} 100%{background:transparent} }
+    .flash-up   { animation: flashUp   1.6s ease-out forwards; }
+    .flash-down { animation: flashDown 1.6s ease-out forwards; }
+
+    /* ── CALL PILLS ── */
+    .call-pill { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; letter-spacing: .3px; white-space: nowrap; }
+    .call-buy  { background: rgba(63,185,80,.15);  color: var(--green); border: 1px solid rgba(63,185,80,.3); }
+    .call-hold { background: rgba(88,166,255,.12); color: var(--blue);  border: 1px solid rgba(88,166,255,.25); }
+    .call-red  { background: rgba(248,81,73,.12);  color: var(--red);   border: 1px solid rgba(248,81,73,.25); }
+
+    /* ── TREND ── */
+    .trend-badge { display: inline-block; padding: 2px 5px; border-radius: 3px; font-size: 10px; font-weight: 600; margin-left: 4px; }
+    .trend-up { background: rgba(63,185,80,.12); color: var(--green); }
+    .trend-dn { background: rgba(248,81,73,.12);  color: var(--red); }
+    .trend-sw { background: rgba(210,153,34,.12); color: var(--yellow); }
+
+    /* ── RSI BAR ── */
+    .rsi-wrap { display: flex; align-items: center; gap: 5px; justify-content: flex-end; }
+    .rsi-bar-bg { width: 36px; height: 4px; background: var(--surface2); border-radius: 2px; overflow: hidden; }
+    .rsi-bar-fill { height: 100%; border-radius: 2px; }
+
+    /* ── SPINNER ── */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner { display: inline-block; width: 11px; height: 11px; border: 2px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: middle; }
+
+    /* ── GLOSSARY ── */
+    .glossary { display: flex; flex-direction: column; gap: 28px; }
+    .gl-section-title {
+      font-size: 13px; font-weight: 700; color: var(--text);
+      padding-bottom: 10px; border-bottom: 1px solid var(--border);
+      margin-bottom: 14px; display: flex; align-items: center; gap: 8px;
+    }
+    .gl-section-title span { font-size: 16px; }
+    .gl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+    .gl-card {
+      background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
+      padding: 14px 16px;
+    }
+    .gl-card-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .gl-badge {
+      font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px;
+      white-space: nowrap; flex-shrink: 0;
+    }
+    .gl-term { font-size: 14px; font-weight: 700; color: var(--text); }
+    .gl-abbr { font-size: 11px; color: var(--muted); margin-left: 4px; font-weight: 400; }
+    .gl-desc { font-size: 12px; color: var(--muted); line-height: 1.6; }
+    .gl-example {
+      margin-top: 8px; padding: 8px 10px; background: var(--surface);
+      border-radius: 5px; font-size: 11px; color: var(--blue);
+      border-left: 2px solid var(--blue); line-height: 1.5;
+    }
+    .gl-example strong { color: var(--text); }
+    .gl-scale {
+      margin-top: 8px; display: flex; gap: 4px; align-items: center; font-size: 11px;
+    }
+    .gl-scale-bar {
+      flex: 1; height: 6px; border-radius: 3px;
+      background: linear-gradient(to right, var(--green), var(--yellow), var(--red));
+    }
+    .gl-ticks { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); margin-top: 3px; }
+    .gl-rule { display: flex; align-items: flex-start; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+    .gl-rule:last-child { border-bottom: none; }
+    .gl-rule-key { width: 90px; flex-shrink: 0; font-weight: 600; }
+    .gl-rule-val { color: var(--muted); line-height: 1.5; }
+    .gl-color-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+    .gl-chip { display: flex; align-items: center; gap: 5px; font-size: 11px; padding: 3px 8px; border-radius: 4px; background: var(--surface); border: 1px solid var(--border); }
+    .gl-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    @media (max-width:700px) { .gl-grid { grid-template-columns: 1fr; } }
+
+    /* ── BUTTONS ── */
+    .btn { padding: 6px 13px; border-radius: 6px; font-size: 12px; cursor: pointer; border: 1px solid var(--border); background: var(--surface2); color: var(--text); transition: background .15s; font-weight: 500; }
+    .btn:hover { background: var(--border); }
+    .btn-primary { background: var(--blue); border-color: var(--blue); color: #0d1117; }
+    .btn-primary:hover { opacity: .88; background: var(--blue); }
+    .btn-del { background: transparent; border-color: transparent; color: var(--muted); padding: 3px 8px; }
+    .btn-del:hover { color: var(--red); background: rgba(248,81,73,.08); border-color: transparent; }
+    .search-bar { padding: 6px 11px; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 13px; outline: none; width: 200px; }
+    .search-bar:focus { border-color: var(--blue); }
+
+    /* ── MODALS ── */
+    .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.75); display:flex; align-items:center; justify-content:center; z-index:500; }
+    .modal { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:24px; width:420px; max-width:94vw; }
+    .modal h3 { font-size:15px; font-weight:600; margin-bottom:18px; }
+    .form-group { margin-bottom:14px; }
+    .form-group label { display:block; font-size:11px; color:var(--muted); margin-bottom:5px; text-transform:uppercase; letter-spacing:.4px; }
+    .form-group input, .form-group select { width:100%; padding:8px 11px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:13px; outline:none; }
+    .form-group input:focus, .form-group select:focus { border-color:var(--blue); }
+    .form-row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .modal-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:18px; }
+    .trade-btns { display:flex; gap:8px; margin-bottom:16px; }
+    .trade-btn { flex:1; padding:8px; border-radius:6px; border:1px solid var(--border); background:var(--surface2); color:var(--muted); cursor:pointer; font-size:13px; font-weight:600; transition:all .15s; }
+    .trade-btn.buy-active  { background:rgba(63,185,80,.12); border-color:var(--green); color:var(--green); }
+    .trade-btn.sell-active { background:rgba(248,81,73,.12); border-color:var(--red);   color:var(--red);   }
+    .preview { background:var(--surface2); border:1px solid var(--border); border-radius:6px; padding:11px 13px; margin-top:10px; font-size:12px; }
+    .preview-row { display:flex; justify-content:space-between; padding:3px 0; }
+    .preview-row .lbl { color:var(--muted); }
+    .empty { text-align:center; padding:40px; color:var(--muted); font-size:13px; }
+
+    /* ── SIDE PANEL ── */
+    .panel-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:300; }
+    .panel-overlay.show { display:block; }
+    .stock-panel { position:fixed; top:0; right:-480px; width:460px; height:100vh; background:var(--surface); border-left:1px solid var(--border); z-index:301; overflow-y:auto; transition:right .26s ease; display:flex; flex-direction:column; }
+    .stock-panel.open { right:0; }
+    .sp-header { display:flex; align-items:flex-start; justify-content:space-between; padding:16px 20px 12px; border-bottom:1px solid var(--border); position:sticky; top:0; background:var(--surface); z-index:1; }
+    .sp-sym { font-size:20px; font-weight:700; }
+    .sp-sector { font-size:11px; color:var(--muted); margin-top:4px; }
+    .sp-close { background:none; border:none; color:var(--muted); cursor:pointer; font-size:20px; padding:0 4px; line-height:1; }
+    .sp-close:hover { color:var(--text); }
+    .sp-price-row { padding:12px 20px; border-bottom:1px solid var(--border); display:flex; align-items:baseline; gap:10px; }
+    .sp-ltp { font-size:24px; font-weight:700; }
+    .sp-chg { font-size:13px; }
+    .sp-section { padding:16px 20px; border-bottom:1px solid var(--border); }
+    .sp-section:last-child { border-bottom:none; }
+    .sp-section-title { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; margin-bottom:12px; font-weight:600; }
+    .sp-chart-wrap { position:relative; height:165px; }
+    .sp-chart-wrap.sm { height:95px; }
+
+    /* ── CALL BANNER ── */
+    .sp-call-block { padding:14px 20px; border-bottom:1px solid var(--border); }
+    .sp-call-header { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+    .sp-call-big { font-size:16px; font-weight:700; }
+    .sp-reasoning-list { list-style:none; display:flex; flex-direction:column; gap:6px; }
+    .sp-reason { display:flex; gap:8px; font-size:12px; line-height:1.5; }
+    .sp-reason-icon { flex-shrink:0; width:16px; height:16px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:9px; font-weight:700; margin-top:1px; }
+    .icon-bull { background:rgba(63,185,80,.2); color:var(--green); }
+    .icon-bear { background:rgba(248,81,73,.2); color:var(--red); }
+    .icon-note { background:rgba(88,166,255,.2); color:var(--blue); }
+    .sp-reason-text { color:var(--text); }
+    .sp-reason-text strong { color:var(--text); }
+    .sp-reason-text em { color:var(--muted); font-style:normal; font-size:11px; }
+
+    /* ── PANEL GRIDS ── */
+    .sp-returns { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+    .ret-cell { background:var(--surface2); border-radius:6px; padding:8px 10px; text-align:center; }
+    .ret-cell .lbl { font-size:10px; color:var(--muted); margin-bottom:4px; }
+    .ret-cell .val { font-size:14px; font-weight:700; }
+    .sp-grid2 { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; }
+    .sp-cell { background:var(--surface2); border-radius:6px; padding:9px 11px; }
+    .sp-cell .lbl { font-size:10px; color:var(--muted); margin-bottom:3px; }
+    .sp-cell .val { font-size:13px; font-weight:600; }
+    .sp-news-item { padding:9px 0; border-bottom:1px solid var(--border); }
+    .sp-news-item:last-child { border-bottom:none; }
+    .sp-news-title a { color:var(--text); text-decoration:none; font-size:12px; line-height:1.45; }
+    .sp-news-title a:hover { color:var(--blue); }
+    .sp-news-meta { font-size:10px; color:var(--muted); margin-top:3px; }
+    .sp-loading { padding:30px 20px; text-align:center; color:var(--muted); font-size:13px; }
+    .sp-computing { padding:14px 20px; font-size:12px; color:var(--yellow); display:flex; align-items:center; gap:6px; border-bottom:1px solid var(--border); }
+
+    @media (max-width:1100px) { .summary-grid { grid-template-columns:repeat(3,1fr); } }
+    @media (max-width:700px)  { .main{padding:12px;} .summary-grid{grid-template-columns:1fr 1fr;} .hide-sm{display:none;} .search-bar{width:130px;} .stock-panel{width:100vw; right:-100vw;} }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Portfolio Tracker</h1>
+  <div class="header-right">
+    <div id="analysisBadge"></div>
+    <div class="live-badge" id="liveBadge" onclick="manualRefresh()" title="Click to refresh now">
+      <span class="live-dot dot-grey" id="liveDot"></span>
+      <span id="liveText">Starting…</span>
+    </div>
+    <span style="font-size:11px;color:var(--muted)" id="luText"></span>
+    <button class="btn" onclick="exportData()">Export</button>
+    <button class="btn" onclick="importData()">Import</button>
+  </div>
+</header>
+
+<div class="main">
+  <div class="summary-grid" id="summaryGrid"></div>
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('all')"   id="tab-all">All Holdings</button>
+    <button class="tab"        onclick="switchTab('p1')"    id="tab-p1">Portfolio 1</button>
+    <button class="tab"        onclick="switchTab('p2')"    id="tab-p2">Portfolio 2</button>
+    <button class="tab"        onclick="switchTab('guide')" id="tab-guide" style="margin-left:auto">&#128218; Reading Guide</button>
+  </div>
+  <div class="table-container">
+    <div class="table-header">
+      <h2 id="tableTitle">All Holdings</h2>
+      <div class="table-controls">
+        <input class="search-bar" type="text" placeholder="Search…" id="searchInput" oninput="render()">
+        <button class="btn" onclick="openAddModal()">+ Add</button>
+        <button class="btn btn-primary" onclick="openTradeModal()">Buy / Sell</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto">
+      <table><thead id="tHead"></thead><tbody id="tBody"></tbody></table>
+    </div>
+  </div>
+</div>
+
+<!-- Glossary / Reading Guide -->
+<div id="glossarySection" style="display:none">
+  <div class="glossary">
+
+    <!-- ── TABLE COLUMNS ── -->
+    <div>
+      <div class="gl-section-title"><span>&#128203;</span> What each column in the table means</div>
+      <div class="gl-grid">
+
+        <div class="gl-card">
+          <div class="gl-card-header"><div class="gl-term">Stock Symbol</div></div>
+          <div class="gl-desc">The short code for a company on the stock exchange. Companies are listed under a fixed abbreviation.</div>
+          <div class="gl-example"><strong>HDFCBANK</strong> = HDFC Bank Limited &nbsp;|&nbsp; <strong>RELIANCE</strong> = Reliance Industries &nbsp;|&nbsp; <strong>TCS</strong> = Tata Consultancy Services</div>
+        </div>
+
+        <div class="gl-card">
+          <div class="gl-card-header">
+            <span class="gl-badge" style="background:var(--surface);border:1px solid var(--border);color:var(--muted)">P1</span>
+            <span class="gl-badge" style="background:var(--surface);border:1px solid var(--border);color:var(--muted)">P2</span>
+            <div class="gl-term gl-abbr">Portfolio badge</div>
+          </div>
+          <div class="gl-desc">Tells you which brokerage account the stock is in. P1 = your first account, P2 = your second account. Visible only in the "All Holdings" view.</div>
+        </div>
+
+        <div class="gl-card">
+          <div class="gl-card-header"><div class="gl-term">Qty <span class="gl-abbr">(Quantity)</span></div></div>
+          <div class="gl-desc">How many shares you currently own of this stock.</div>
+          <div class="gl-example">If you have <strong>Qty = 274</strong> for HDFCBANK, you own 274 shares of HDFC Bank. Click to edit if you buy or sell.</div>
+        </div>
+
+        <div class="gl-card">
+          <div class="gl-card-header"><div class="gl-term">Avg Cost <span class="gl-abbr">(Average Cost Price)</span></div></div>
+          <div class="gl-desc">The average price you paid per share — calculated across all your buy trades for that stock. If you bought at different times at different prices, this blends them into one number.</div>
+          <div class="gl-example">Bought 100 shares at ₹500 and 100 more at ₹600 → <strong>Avg Cost = ₹550</strong> (blended average of both purchases)</div>
+        </div>
+
+        <div class="gl-card">
+          <div class="gl-card-header"><div class="gl-term">LTP <span class="gl-abbr">(Last Traded Price)</span></div></div>
+          <div class="gl-desc">The most recent price at which this stock was bought or sold on the exchange. This is the "live" current market price, updated every 60 seconds during market hours.</div>
+          <div class="gl-example">LTP = ₹1,833 means the last person who traded HDFCBANK on NSE paid ₹1,833 per share.</div>
+        </div>
+
+        <div class="gl-card">
+          <div class="gl-card-header"><div class="gl-term">Day Chg <span class="gl-abbr">(Day Change %)</span></div></div>
+          <div class="gl-desc">How much the stock has moved <em>today</em> compared to yesterday's closing price. Shown in green (up) or red (down) below the LTP.</div>
+          <div class="gl-example"><strong style="color:var(--green)">+1.45%</strong> = stock rose 1.45% from yesterday's close &nbsp;|&nbsp; <strong style="color:var(--red)">-0.82%</strong> = stock fell 0.82%</div>
+        </div>
+
+        <div class="gl-card">
+          <div class="gl-card-header"><div class="gl-term">Invested</div></div>
+          <div class="gl-desc">Total money you put into this stock. Calculated as: <strong>Qty × Avg Cost</strong>.</div>
+          <div class="gl-example">274 shares × ₹1,406.27 avg cost = <strong>₹3.85 L invested</strong> in HDFCBANK</div>
+        </div>
+
+        <div class="gl-card">
+          <div class="gl-card-header"><div class="gl-term">Curr. Value <span class="gl-abbr">(Current Value)</span></div></div>
+          <div class="gl-desc">What your shares are worth <em>right now</em> at the current market price. Calculated as: <strong>Qty × LTP</strong>. This changes every 60 seconds.</div>
+          <div class="gl-example">274 shares × ₹1,833 LTP = <strong>₹5.02 L current value</strong>. That's ₹1.17 L more than you invested.</div>
+        </div>
+
+        <div class="gl-card">
+          <div class="gl-card-header"><div class="gl-term">P&L <span class="gl-abbr">(Profit &amp; Loss)</span></div></div>
+          <div class="gl-desc">Your unrealised gain or loss in rupees on this holding. <span style="color:var(--green)">Green = profit</span>, <span style="color:var(--red)">Red = loss</span>. "Unrealised" means you haven't sold yet — it's a paper gain/loss.</div>
+          <div class="gl-example">Current Value ₹5.02 L − Invested ₹3.85 L = <strong style="color:var(--green)">+₹1.17 L profit</strong></div>
+        </div>
+
+        <div class="gl-card">
+          <div class="gl-card-header"><div class="gl-term">P&L % <span class="gl-abbr">(Profit &amp; Loss Percentage)</span></div></div>
+          <div class="gl-desc">Same as P&L but expressed as a percentage return on your investment. Easier to compare across different stocks.</div>
+          <div class="gl-example">₹1.17 L profit on ₹3.85 L invested = <strong style="color:var(--green)">+30.4%</strong> return. This is more useful than the raw number when comparing stocks of different sizes.</div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── SIGNAL BADGES ── -->
+    <div>
+      <div class="gl-section-title"><span>&#128276;</span> Signal badges — RSI, Trend, and Calls</div>
+      <div class="gl-grid">
+
+        <div class="gl-card">
+          <div class="gl-card-header">
+            <div class="gl-term">RSI <span class="gl-abbr">(Relative Strength Index)</span></div>
+          </div>
+          <div class="gl-desc">A number from 0 to 100 that measures how fast and how much a stock has been moving. It tells you whether a stock is being bought too aggressively (overbought) or sold off too hard (oversold).</div>
+          <div style="margin-top:10px">
+            <div class="gl-scale-bar"></div>
+            <div class="gl-ticks"><span style="color:var(--green)">0 — Oversold</span><span>50 — Neutral</span><span style="color:var(--red)">100 — Overbought</span></div>
+          </div>
+          <div style="margin-top:10px;display:flex;flex-direction:column;gap:5px">
+            <div class="gl-rule"><span class="gl-rule-key" style="color:var(--green)">Below 30</span><span class="gl-rule-val">Oversold — stock has fallen a lot, may bounce. A potential buying opportunity.</span></div>
+            <div class="gl-rule"><span class="gl-rule-key" style="color:var(--yellow)">30 – 70</span><span class="gl-rule-val">Normal range — no extreme signal in either direction.</span></div>
+            <div class="gl-rule"><span class="gl-rule-key" style="color:var(--red)">Above 70</span><span class="gl-rule-val">Overbought — stock has risen a lot fast, may cool off. Caution on buying more.</span></div>
+          </div>
+          <div class="gl-example">RSI = <strong style="color:var(--green)">24</strong> → Stock has been beaten down heavily. Historically a recovery zone. &nbsp;|&nbsp; RSI = <strong style="color:var(--red)">78</strong> → Stock has rallied hard. Avoid chasing it higher.</div>
+        </div>
+
+        <div class="gl-card">
+          <div class="gl-card-header">
+            <span class="gl-badge trend-up" style="background:rgba(63,185,80,.12);color:var(--green)">UP</span>
+            <span class="gl-badge trend-dn" style="background:rgba(248,81,73,.12);color:var(--red)">DN</span>
+            <span class="gl-badge trend-sw" style="background:rgba(210,153,34,.12);color:var(--yellow)">SW</span>
+            <div class="gl-term gl-abbr">Trend badge</div>
+          </div>
+          <div class="gl-desc">Shows the overall direction the stock has been moving over the past several months, based on two moving averages (50-day and 200-day).</div>
+          <div style="margin-top:10px;display:flex;flex-direction:column;gap:5px">
+            <div class="gl-rule"><span class="gl-rule-key" style="color:var(--green)">UP</span><span class="gl-rule-val"><strong>Uptrend</strong> — price is above its 50-day AND 200-day average. The stock has been going up for months. Generally safer to buy in an uptrend.</span></div>
+            <div class="gl-rule"><span class="gl-rule-key" style="color:var(--red)">DN</span><span class="gl-rule-val"><strong>Downtrend</strong> — price is below both averages. The stock has been falling. Buying into a downtrend is risky without a clear reversal.</span></div>
+            <div class="gl-rule"><span class="gl-rule-key" style="color:var(--yellow)">SW</span><span class="gl-rule-val"><strong>Sideways</strong> — no clear direction. The stock is moving up and down without a trend. Wait for a breakout in either direction.</span></div>
+          </div>
+        </div>
+
+        <div class="gl-card">
+          <div class="gl-card-header">
+            <span class="gl-badge call-buy">BUY</span>
+            <span class="gl-badge call-hold">HOLD</span>
+            <span class="gl-badge call-red">REDUCE</span>
+            <div class="gl-term gl-abbr" style="margin-left:4px">Signal</div>
+          </div>
+          <div class="gl-desc">A suggested action based on combining all technical signals (RSI, MACD, Trend, Bollinger Bands). <strong>This is not financial advice</strong> — it's a technical snapshot to help you make an informed decision.</div>
+          <div style="margin-top:10px;display:flex;flex-direction:column;gap:5px">
+            <div class="gl-rule"><span class="gl-rule-key" style="color:var(--green)">BUY</span><span class="gl-rule-val">More signals point to upside. Could be a good entry or a chance to add more. Always verify the reason by clicking the stock.</span></div>
+            <div class="gl-rule"><span class="gl-rule-key" style="color:var(--blue)">HOLD</span><span class="gl-rule-val">Signals are mixed — no strong reason to buy more or sell right now. Stay put and watch.</span></div>
+            <div class="gl-rule"><span class="gl-rule-key" style="color:var(--red)">REDUCE</span><span class="gl-rule-val">More signals point to weakness. Consider reducing your position — not necessarily sell everything, but trim exposure.</span></div>
+          </div>
+          <div class="gl-example">Click the signal pill or stock name to see a full plain-English breakdown of <em>why</em> the signal was generated.</div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── TECHNICAL INDICATORS ── -->
+    <div>
+      <div class="gl-section-title"><span>&#128200;</span> Technical indicators — what the charts show</div>
+      <div class="gl-grid">
+
+        <div class="gl-card">
+          <div class="gl-card-header"><div class="gl-term">MACD <span class="gl-abbr">(Moving Average Convergence Divergence)</span></div></div>
+          <div class="gl-desc">Measures whether short-term momentum is stronger or weaker than long-term momentum. It compares a 12-day price average against a 26-day average.</div>
+          <div style="margin-top:10px;display:flex;flex-direction:column;gap:5px">
+            <div class="gl-rule"><span class="gl-rule-key" style="color:var(--green)">Bullish</span><span class="gl-rule-val">Short-term avg crossed above long-term avg → buyers are taking control.</span></div>
+            <div class="gl-rule"><span class="gl-rule-key" style="color:var(--red)">Bearish</span><span class="gl-rule-val">Short-term avg crossed below long-term avg → sellers are gaining the edge.</span></div>
+          </div>
+          <div class="gl-example">In the chart: <strong style="color:var(--green)">green bars</strong> = bullish momentum building &nbsp;|&nbsp; <strong style="color:var(--red)">red bars</strong> = bearish momentum building. The taller the bar, the stronger the signal.</div>
+        </div>
+
+        <div class="gl-card">
+          <div class="gl-card-header"><div class="gl-term">Moving Averages <span class="gl-abbr">(MA20, MA50, MA200)</span></div></div>
+          <div class="gl-desc">The average closing price of the stock over the last 20, 50, or 200 days. They smooth out daily noise to show the overall direction. Longer averages (200-day) show the long-term trend; shorter ones (20-day) react faster.</div>
+          <div style="margin-top:10px;display:flex;flex-direction:column;gap:5px">
+            <div class="gl-rule"><span class="gl-rule-key">MA20</span><span class="gl-rule-val">Short-term trend (4 weeks). Reacts quickly to price changes.</span></div>
+            <div class="gl-rule"><span class="gl-rule-key">MA50</span><span class="gl-rule-val">Medium-term trend (2.5 months). A key support/resistance level watched by institutions.</span></div>
+            <div class="gl-rule"><span class="gl-rule-key">MA200</span><span class="gl-rule-val">Long-term trend (10 months). If a stock falls below this, it's a serious warning sign.</span></div>
+          </div>
+          <div class="gl-example">If LTP &gt; MA50 &gt; MA200 → strong uptrend. If LTP &lt; MA50 &lt; MA200 → confirmed downtrend.</div>
+        </div>
+
+        <div class="gl-card">
+          <div class="gl-card-header"><div class="gl-term">Bollinger Bands <span class="gl-abbr">(BB Upper / BB Lower)</span></div></div>
+          <div class="gl-desc">A price channel drawn around the stock's average price, ±2 standard deviations wide. About 95% of price action happens <em>inside</em> the bands. When price touches or exits the bands, it's statistically unusual.</div>
+          <div style="margin-top:10px;display:flex;flex-direction:column;gap:5px">
+            <div class="gl-rule"><span class="gl-rule-key">Near BB Lower</span><span class="gl-rule-val">Price is at the lower edge of normal — statistically cheap relative to recent history. Often bounces back.</span></div>
+            <div class="gl-rule"><span class="gl-rule-key">Near BB Upper</span><span class="gl-rule-val">Price is at the upper edge — stretched beyond normal. Often pulls back toward the middle.</span></div>
+          </div>
+          <div class="gl-example">Think of it like a rubber band. When it's stretched (near the bands), it tends to snap back toward the middle.</div>
+        </div>
+
+        <div class="gl-card">
+          <div class="gl-card-header"><div class="gl-term">52-Week High / Low</div></div>
+          <div class="gl-desc">The highest and lowest prices the stock traded at over the last 12 months. Important reference points — stocks often face resistance at their 52W high and find support near their 52W low.</div>
+          <div class="gl-example"><strong>52W High = ₹2,000, current LTP = ₹1,200 → "From High = −40%"</strong><br>The stock is 40% below its yearly peak. Could be an opportunity or a warning — investigate why it fell.</div>
+        </div>
+
+        <div class="gl-card">
+          <div class="gl-card-header"><div class="gl-term">From 52W High</div></div>
+          <div class="gl-desc">How far the current price is from the stock's highest price over the last year. A large negative number means the stock has corrected significantly from its peak.</div>
+          <div style="margin-top:10px;display:flex;flex-direction:column;gap:5px">
+            <div class="gl-rule"><span class="gl-rule-key" style="color:var(--red)">−50% or more</span><span class="gl-rule-val">Major correction. Could be deep value — or a falling knife. Research before buying.</span></div>
+            <div class="gl-rule"><span class="gl-rule-key" style="color:var(--yellow)">−10% to −30%</span><span class="gl-rule-val">Normal healthy pullback. Often a good zone to consider adding.</span></div>
+            <div class="gl-rule"><span class="gl-rule-key" style="color:var(--green)">0% to −5%</span><span class="gl-rule-val">Near the yearly high. Stock is showing strength, but less upside room before resistance.</span></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── FUNDAMENTAL METRICS ── -->
+    <div>
+      <div class="gl-section-title"><span>&#127970;</span> Fundamental metrics — is the business actually good?</div>
+      <div class="gl-grid">
+
+        <div class="gl-card">
+          <div class="gl-card-header"><div class="gl-term">P/E Ratio <span class="gl-abbr">(Price to Earnings)</span></div></div>
+          <div class="gl-desc">How much you are paying for every ₹1 of the company's annual profit. The single most used valuation metric. Lower generally = cheaper, higher = more expensive (but may be justified by growth).</div>
+          <div style="margin-top:10px;display:flex;flex-direction:column;gap:5px">
+            <div class="gl-rule"><span class="gl-rule-key" style="color:var(--green)">Below 15x</span><span class="gl-rule-val">Potentially cheap. Paying ₹15 for every ₹1 earned. Could be a bargain or a sign of problems.</span></div>
+            <div class="gl-rule"><span class="gl-rule-key" style="color:var(--yellow)">15x – 30x</span><span class="gl-rule-val">Reasonable for most established Indian companies.</span></div>
+            <div class="gl-rule"><span class="gl-rule-key" style="color:var(--red)">Above 50x</span><span class="gl-rule-val">Very expensive. High expectations baked in — any disappointment can cause a sharp fall.</span></div>
+          </div>
+          <div class="gl-example">P/E = 20 means you pay ₹20 for every ₹1 the company earns. It would take 20 years to earn back your investment from profits alone (ignoring growth).</div>
+        </div>
+
+        <div class="gl-card">
+          <div class="gl-card-header"><div class="gl-term">P/B Ratio <span class="gl-abbr">(Price to Book)</span></div></div>
+          <div class="gl-desc">Compares the stock price to the company's "book value" — the net value of all its assets minus liabilities. Useful for banks and asset-heavy companies.</div>
+          <div style="margin-top:10px;display:flex;flex-direction:column;gap:5px">
+            <div class="gl-rule"><span class="gl-rule-key" style="color:var(--green)">Below 1x</span><span class="gl-rule-val">Stock trades below its asset value — theoretically very cheap. But could signal hidden problems.</span></div>
+            <div class="gl-rule"><span class="gl-rule-key" style="color:var(--yellow)">1x – 3x</span><span class="gl-rule-val">Normal range for most businesses.</span></div>
+            <div class="gl-rule"><span class="gl-rule-key" style="color:var(--red)">Above 5x</span><span class="gl-rule-val">Paying a big premium over assets. Justified only if the business earns very high returns.</span></div>
+          </div>
+        </div>
+
+        <div class="gl-card">
+          <div class="gl-card-header"><div class="gl-term">ROE <span class="gl-abbr">(Return on Equity)</span></div></div>
+          <div class="gl-desc">How much profit the company earns for every rupee of shareholder money. A measure of management quality and business efficiency. Higher is better.</div>
+          <div style="margin-top:10px;display:flex;flex-direction:column;gap:5px">
+            <div class="gl-rule"><span class="gl-rule-key" style="color:var(--red)">Below 10%</span><span class="gl-rule-val">Poor returns. The company isn't generating enough profit from the capital invested in it.</span></div>
+            <div class="gl-rule"><span class="gl-rule-key" style="color:var(--yellow)">10% – 15%</span><span class="gl-rule-val">Acceptable. Roughly matching the cost of capital.</span></div>
+            <div class="gl-rule"><span class="gl-rule-key" style="color:var(--green)">Above 20%</span><span class="gl-rule-val">Excellent. The company is a high-quality compounder — these are the ones that make you rich long term.</span></div>
+          </div>
+          <div class="gl-example">ROE = 25% means for every ₹100 shareholders have put in, the company earns ₹25 profit per year. Compare: a bank FD earns ~7%.</div>
+        </div>
+
+        <div class="gl-card">
+          <div class="gl-card-header"><div class="gl-term">EPS <span class="gl-abbr">(Earnings Per Share, TTM)</span></div></div>
+          <div class="gl-desc">The company's net profit divided by the total number of shares. Shows how much money the company earned per share over the last 12 months (TTM = Trailing Twelve Months).</div>
+          <div class="gl-example">EPS = ₹85 and LTP = ₹1,700 → P/E = 20x (which is: 1700 ÷ 85). Rising EPS over time is one of the best signs of a healthy business.</div>
+        </div>
+
+        <div class="gl-card">
+          <div class="gl-card-header"><div class="gl-term">Revenue Growth</div></div>
+          <div class="gl-desc">How much the company's total sales grew compared to the same period last year. Shows if the business is expanding.</div>
+          <div style="margin-top:10px;display:flex;flex-direction:column;gap:5px">
+            <div class="gl-rule"><span class="gl-rule-key" style="color:var(--green)">+15% or more</span><span class="gl-rule-val">Strong growth. Business is expanding rapidly.</span></div>
+            <div class="gl-rule"><span class="gl-rule-key" style="color:var(--yellow)">+5% to +15%</span><span class="gl-rule-val">Steady growth. Consistent performer.</span></div>
+            <div class="gl-rule"><span class="gl-rule-key" style="color:var(--red)">Negative</span><span class="gl-rule-val">Revenue shrinking. Could be a red flag unless temporary (e.g. industry cycle).</span></div>
+          </div>
+        </div>
+
+        <div class="gl-card">
+          <div class="gl-card-header"><div class="gl-term">Profit Margin</div></div>
+          <div class="gl-desc">Out of every ₹100 in revenue, how much does the company keep as net profit? High margins mean the business has pricing power and low costs.</div>
+          <div class="gl-example">Revenue = ₹1,000 Cr, Net Profit = ₹150 Cr → <strong>Profit Margin = 15%</strong>. IT companies like TCS often have 20–25% margins. Banks and retailers typically have lower margins but high volumes.</div>
+        </div>
+
+        <div class="gl-card">
+          <div class="gl-card-header"><div class="gl-term">Market Cap <span class="gl-abbr">(Market Capitalisation)</span></div></div>
+          <div class="gl-desc">The total value of all shares of the company combined. Tells you the size of the company. Calculated as: Share Price × Total Shares Outstanding.</div>
+          <div style="margin-top:10px;display:flex;flex-direction:column;gap:5px">
+            <div class="gl-rule"><span class="gl-rule-key">Large Cap</span><span class="gl-rule-val">Above ₹20,000 Cr — stable, lower risk (e.g. HDFC Bank, Reliance)</span></div>
+            <div class="gl-rule"><span class="gl-rule-key">Mid Cap</span><span class="gl-rule-val">₹5,000 – ₹20,000 Cr — growing, moderate risk</span></div>
+            <div class="gl-rule"><span class="gl-rule-key">Small Cap</span><span class="gl-rule-val">Below ₹5,000 Cr — higher growth potential but higher risk</span></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── RETURNS ── -->
+    <div>
+      <div class="gl-section-title"><span>&#128197;</span> Performance Returns (in the stock detail panel)</div>
+      <div class="gl-grid">
+        <div class="gl-card">
+          <div class="gl-card-header"><div class="gl-term">1M / 3M / 6M Returns</div></div>
+          <div class="gl-desc">How much the stock price has changed over the last 1 month, 3 months, and 6 months. Useful for quickly spotting momentum direction without digging into charts.</div>
+          <div class="gl-example"><strong style="color:var(--green)">+12% (1M)</strong> = price is 12% higher than it was one month ago — strong short-term momentum. <br><strong style="color:var(--red)">−18% (6M)</strong> = the stock has fallen 18% over 6 months — a downtrend worth investigating.</div>
+        </div>
+        <div class="gl-card">
+          <div class="gl-card-header"><div class="gl-term">Your P&L vs. Stock Returns</div></div>
+          <div class="gl-desc">Your personal P&L % (in the table) is based on <em>your avg cost</em> — when you bought it. The stock's 1M/3M/6M returns are based on the stock's price moves regardless of when you entered.</div>
+          <div class="gl-example">You bought SUNPHARMA at ₹686 (avg cost). Today it's ₹1,789. Your P&L is <strong>+160%</strong>. The stock's 6M return might only be +8% — because the stock has been at high levels. Both numbers are correct, just measuring different things.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── COLOUR CODING ── -->
+    <div>
+      <div class="gl-section-title"><span>&#127912;</span> Colour coding at a glance</div>
+      <div class="gl-grid">
+        <div class="gl-card" style="grid-column: 1 / -1">
+          <div class="gl-desc" style="margin-bottom:12px">Everything in this dashboard follows a consistent colour system:</div>
+          <div class="gl-color-row">
+            <div class="gl-chip"><div class="gl-dot" style="background:var(--green)"></div>Green = Positive / Bullish / Profit</div>
+            <div class="gl-chip"><div class="gl-dot" style="background:var(--red)"></div>Red = Negative / Bearish / Loss</div>
+            <div class="gl-chip"><div class="gl-dot" style="background:var(--yellow)"></div>Yellow = Neutral / Caution / Sideways</div>
+            <div class="gl-chip"><div class="gl-dot" style="background:var(--blue)"></div>Blue = Informational / HOLD</div>
+            <div class="gl-chip"><div class="gl-dot" style="background:var(--muted)"></div>Grey = No data / Manual / Inactive</div>
+          </div>
+          <div style="margin-top:14px;font-size:12px;color:var(--muted);line-height:1.7">
+            <strong style="color:var(--text)">Price flash animations:</strong> When live prices update, a row briefly flashes <span style="color:var(--green)">green</span> if the price went up or <span style="color:var(--red)">red</span> if it went down. This helps you spot live movements at a glance.<br><br>
+            <strong style="color:var(--text)">SGBs (Sovereign Gold Bonds):</strong> SGBJUL28IV-GB, SGBJUN28-GB, SGBMAY29I are gold bonds — not regular stocks. Their prices are based on gold rates and don't trade on the live exchange feed, so they show "manual" and need to be updated by you.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── TIPS ── -->
+    <div>
+      <div class="gl-section-title"><span>&#128161;</span> Quick tips for reading this dashboard</div>
+      <div class="gl-grid">
+        <div class="gl-card">
+          <div class="gl-term" style="margin-bottom:8px">Don't act on a single signal</div>
+          <div class="gl-desc">A BUY signal is strongest when multiple things agree: RSI is low, MACD is bullish, stock is in an uptrend, and it's near the BB lower band. One signal alone is weak. Four signals together is meaningful.</div>
+        </div>
+        <div class="gl-card">
+          <div class="gl-term" style="margin-bottom:8px">Technical vs. Fundamental</div>
+          <div class="gl-desc">Technical signals (RSI, MACD, Trend) tell you <em>when</em> to act. Fundamental signals (P/E, ROE, Revenue Growth) tell you <em>what</em> to buy. Good investing uses both: pick quality companies (fundamentals) at the right time (technicals).</div>
+        </div>
+        <div class="gl-card">
+          <div class="gl-term" style="margin-bottom:8px">REDUCE ≠ Sell everything</div>
+          <div class="gl-desc">A REDUCE signal means the risk/reward looks unfavourable right now. You might sell 30–50% of your position to lock in some profit and reduce exposure, keeping the rest in case the stock recovers.</div>
+        </div>
+        <div class="gl-card">
+          <div class="gl-term" style="margin-bottom:8px">Analysis refreshes every hour</div>
+          <div class="gl-desc">The RSI, MACD, trend, and call signals are recomputed once every hour from fresh data. The time shown next to "Analysis" in the header tells you when it was last updated. Prices refresh every 60 seconds.</div>
+        </div>
+        <div class="gl-card">
+          <div class="gl-term" style="margin-bottom:8px">Click any stock for the full picture</div>
+          <div class="gl-desc">Click any stock name or its signal badge to open the detail panel. You'll see the full 6-month price chart, RSI chart, MACD chart, detailed reasoning in plain English, fundamentals, and the latest news — all in one place.</div>
+        </div>
+        <div class="gl-card">
+          <div class="gl-term" style="margin-bottom:8px">This is not financial advice</div>
+          <div class="gl-desc">The signals in this tracker are generated by mathematical formulas from public market data. They are tools to help you think, not instructions to follow blindly. Always do your own research and consider your own risk tolerance before buying or selling.</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Side Panel -->
+<div class="panel-overlay" id="panelOverlay" onclick="closePanel()"></div>
+<div class="stock-panel" id="stockPanel">
+  <div class="sp-header">
+    <div>
+      <div class="sp-sym" id="spSym">—</div>
+      <div class="sp-sector" id="spSector"></div>
+    </div>
+    <button class="sp-close" onclick="closePanel()">&#10005;</button>
+  </div>
+  <div class="sp-price-row">
+    <span class="sp-ltp" id="spLtp">—</span>
+    <span class="sp-chg" id="spChg"></span>
+  </div>
+  <div id="spBody">
+    <div class="sp-loading"><span class="spinner"></span> Loading…</div>
+  </div>
+</div>
+
+<!-- Trade Modal -->
+<div class="modal-overlay" id="tradeModal" style="display:none" onclick="bgClose(event,'tradeModal')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h3>Record Trade</h3>
+    <div class="trade-btns">
+      <button class="trade-btn buy-active" id="buyBtn"  onclick="setTType('buy')">Buy</button>
+      <button class="trade-btn"            id="sellBtn" onclick="setTType('sell')">Sell</button>
+    </div>
+    <div class="form-group"><label>Portfolio</label>
+      <select id="tPortfolio" onchange="updatePreview()">
+        <option value="p1">Portfolio 1</option><option value="p2">Portfolio 2</option>
+      </select>
+    </div>
+    <div class="form-group"><label>Stock Symbol</label>
+      <input id="tSymbol" type="text" placeholder="e.g. HDFCBANK" oninput="this.value=this.value.toUpperCase();updatePreview()">
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Quantity</label><input id="tQty" type="number" placeholder="0" oninput="updatePreview()"></div>
+      <div class="form-group"><label>Price per share (&#8377;)</label><input id="tPrice" type="number" placeholder="0.00" step="0.01" oninput="updatePreview()"></div>
+    </div>
+    <div id="tPreview" class="preview" style="display:none"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="close1('tradeModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="executeTrade()">Confirm Trade</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Stock Modal -->
+<div class="modal-overlay" id="addModal" style="display:none" onclick="bgClose(event,'addModal')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h3>Add Stock</h3>
+    <div class="form-group"><label>Portfolio</label>
+      <select id="aPortfolio"><option value="p1">Portfolio 1</option><option value="p2">Portfolio 2</option></select>
+    </div>
+    <div class="form-group"><label>Stock Symbol</label>
+      <input id="aSymbol" type="text" placeholder="e.g. INFY" oninput="this.value=this.value.toUpperCase()">
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Quantity</label><input id="aQty" type="number" placeholder="0"></div>
+      <div class="form-group"><label>Avg Cost (&#8377;)</label><input id="aAvg" type="number" placeholder="0.00" step="0.01"></div>
+    </div>
+    <div class="form-group"><label>Current Price / LTP (&#8377;)</label>
+      <input id="aLtp" type="number" placeholder="Leave blank to use avg cost" step="0.01">
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="close1('addModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="addStock()">Add Stock</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Modal -->
+<div class="modal-overlay" id="editModal" style="display:none" onclick="bgClose(event,'editModal')">
+  <div class="modal" onclick="event.stopPropagation()" style="width:320px">
+    <h3 id="editTitle">Edit</h3>
+    <div class="form-group">
+      <label id="editLabel">Value</label>
+      <input id="editVal" type="number" step="0.01" onkeydown="if(event.key==='Enter')saveEdit()">
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="close1('editModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveEdit()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── CONSTANTS ─────────────────────────────────────────────────────────────────
+const SGB_SET          = new Set(['SGBJUL28IV-GB','SGBJUN28-GB','SGBMAY29I']);
+const LIVE_INTERVAL_MS = 60_000;
+const ANALYSIS_TTL_MS  = 3_600_000;
+const ANALYSIS_RETRY   = 15_000;
+
+// ── DEFAULT DATA ──────────────────────────────────────────────────────────────
+const DEFAULTS = {
+  lastUpdated: '2026-05-18T15:47:00',
+  portfolios: {
+    p1: { name:'Portfolio 1', stocks:[
+      {symbol:'BAJFINANCE', qty:15,  avgCost:6975.96, ltp:7152.80},
+      {symbol:'BAJAJFINSV', qty:19,  avgCost:1687.53, ltp:1643.15},
+      {symbol:'HDFCBANK',   qty:274, avgCost:1406.27, ltp:1833.25},
+      {symbol:'HINDUNILVR', qty:20,  avgCost:2680.34, ltp:2363.25},
+      {symbol:'JIOFIN',     qty:80,  avgCost:261.70,  ltp:337.10 },
+      {symbol:'M&M',        qty:90,  avgCost:1125.93, ltp:3041.50},
+      {symbol:'NTPC',       qty:350, avgCost:163.29,  ltp:349.05 },
+      {symbol:'ONGC',       qty:400, avgCost:140.98,  ltp:247.40 },
+      {symbol:'POWERGRID',  qty:341, avgCost:158.97,  ltp:329.80 },
+      {symbol:'RADIOCITY',  qty:187, avgCost:52.91,   ltp:13.46  },
+      {symbol:'RECLTD',     qty:100, avgCost:321.51,  ltp:550.55 },
+      {symbol:'RELIANCE',   qty:60,  avgCost:1202.87, ltp:1245.30},
+      {symbol:'SUNPHARMA',  qty:220, avgCost:686.28,  ltp:1789.05},
+      {symbol:'SUVEN',      qty:600, avgCost:187.58,  ltp:145.74 },
+      {symbol:'TATAMOTORS', qty:60,  avgCost:435.74,  ltp:779.75 },
+      {symbol:'WIPRO',      qty:366, avgCost:286.74,  ltp:308.85 },
+      {symbol:'YESBANK',    qty:1900,avgCost:79.43,   ltp:20.96  },
+    ]},
+    p2: { name:'Portfolio 2', stocks:[
+      {symbol:'ALKYLAMINE',   qty:25,  avgCost:4043.26, ltp:1944.50 },
+      {symbol:'BATAINDIA',    qty:2,   avgCost:1656.00, ltp:1412.55 },
+      {symbol:'CAMPUS',       qty:100, avgCost:406.20,  ltp:294.25  },
+      {symbol:'DMART',        qty:46,  avgCost:4372.07, ltp:3543.65 },
+      {symbol:'HAPPSTMNDS',   qty:214, avgCost:1092.27, ltp:740.50  },
+      {symbol:'IOLCP',        qty:20,  avgCost:546.77,  ltp:420.30  },
+      {symbol:'KOTAKBANK',    qty:10,  avgCost:1970.00, ltp:1784.05 },
+      {symbol:'LT',           qty:90,  avgCost:2272.23, ltp:3807.20 },
+      {symbol:'NSLNISP',      qty:390, avgCost:80.07,   ltp:44.64   },
+      {symbol:'POLYPLEX',     qty:35,  avgCost:2157.05, ltp:1376.30 },
+      {symbol:'RELAXO',       qty:105, avgCost:1283.48, ltp:641.00  },
+      {symbol:'RELIANCE',     qty:224, avgCost:1112.63, ltp:1245.30 },
+      {symbol:'SBICARD',      qty:85,  avgCost:948.71,  ltp:715.35  },
+      {symbol:'SGBJUL28IV-GB',qty:20,  avgCost:4802.00, ltp:8021.88 },
+      {symbol:'SGBJUN28-GB',  qty:3,   avgCost:4627.00, ltp:8020.94 },
+      {symbol:'SGBMAY29I',    qty:6,   avgCost:4727.00, ltp:7936.00 },
+      {symbol:'SHREECEM',     qty:2,   avgCost:31350.00,ltp:28352.20},
+      {symbol:'TATAPOWER',    qty:7,   avgCost:342.40,  ltp:420.90  },
+      {symbol:'TCS',          qty:11,  avgCost:4501.00, ltp:4324.40 },
+    ]}
+  }
+};
+
+// ── STATE ─────────────────────────────────────────────────────────────────────
+let D             = JSON.parse(JSON.stringify(DEFAULTS)); // overwritten from server
+let activeTab     = 'all';
+let sortKey       = null, sortDir = -1;
+let tType         = 'buy';
+let editTarget    = null;
+let priceFlash    = {};
+let liveTimer     = null;
+let analysisData  = {};
+let analysisComputing = false;
+let analysisTimer_    = null;
+let panelCharts   = {};
+let currentPanelSym = null;
+
+// ── PORTFOLIO PERSISTENCE (server-first, localStorage fallback) ────────────────
+async function loadPortfolio() {
+  try {
+    const res = await fetch('/api/portfolio');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.ok && data.portfolio && data.portfolio.portfolios) {
+        D = data.portfolio;
+        localStorage.setItem('pt_v1', JSON.stringify(D)); // keep local in sync
+        return;
+      }
+    }
+  } catch(e) { /* server not ready yet */ }
+  // Fallback: localStorage
+  const local = localStorage.getItem('pt_v1');
+  if (local) { try { D = JSON.parse(local); } catch(e) {} }
+}
+
+async function save() {
+  D.lastUpdated = new Date().toISOString();
+  localStorage.setItem('pt_v1', JSON.stringify(D)); // instant local save
+  try {
+    await fetch('/api/portfolio', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(D)
+    });
+  } catch(e) { console.warn('Server save failed, localStorage only:', e); }
+}
+
+// ── COMPUTED ──────────────────────────────────────────────────────────────────
+function calc(s) {
+  const inv=s.qty*s.avgCost, cur=s.qty*s.ltp, pnl=cur-inv;
+  return {...s, inv, cur, pnl, pnlPct: inv>0?pnl/inv*100:0};
+}
+function portfolioStats(pid) {
+  const arr=D.portfolios[pid].stocks.map(calc);
+  const inv=arr.reduce((a,s)=>a+s.inv,0), cur=arr.reduce((a,s)=>a+s.cur,0), pnl=cur-inv;
+  return {inv, cur, pnl, pct:inv>0?pnl/inv*100:0, count:arr.length};
+}
+function getRows(tab) {
+  if (tab==='all')
+    return [...D.portfolios.p1.stocks.map((s,i)=>({...calc(s),pid:'p1',idx:i})),
+            ...D.portfolios.p2.stocks.map((s,i)=>({...calc(s),pid:'p2',idx:i}))];
+  return D.portfolios[tab].stocks.map((s,i)=>({...calc(s),pid:tab,idx:i}));
+}
+
+// ── LIVE PRICES ───────────────────────────────────────────────────────────────
+function getLiveSymbols() {
+  const set=new Set();
+  for (const pid of ['p1','p2'])
+    for (const s of D.portfolios[pid].stocks)
+      if (!SGB_SET.has(s.symbol)) set.add(s.symbol);
+  return [...set];
+}
+
+async function fetchLivePrices() {
+  setLive('loading');
+  const syms=getLiveSymbols();
+  if (!syms.length) { setLive('idle'); return; }
+  try {
+    const res=await fetch('/api/prices?symbols='+syms.map(encodeURIComponent).join(','));
+    if (!res.ok) throw new Error('HTTP '+res.status);
+    const data=await res.json();
+    if (data.error) { setLive('error',data.error); return; }
+    let changed=false; priceFlash={};
+    for (const pid of ['p1','p2']) {
+      for (const s of D.portfolios[pid].stocks) {
+        const p=data.prices[s.symbol];
+        if (!p) continue;
+        if (p.ltp && p.ltp!==s.ltp) {
+          priceFlash[pid+'-'+s.symbol]=p.ltp>s.ltp?'up':'down';
+          s.ltp=p.ltp; changed=true;
+        }
+        s._chg=p.change??null; s._chgPct=p.changePct??null;
+      }
+    }
+    if (changed) save();
+    render();
+    setLive(Object.keys(data.prices).length>0?'open':'closed');
+    requestAnimationFrame(()=>{
+      for (const [key,dir] of Object.entries(priceFlash)) {
+        const el=document.getElementById('row-'+key.replace(/[^a-zA-Z0-9]/g,'_'));
+        if (el) { el.classList.remove('flash-up','flash-down'); void el.offsetWidth; el.classList.add('flash-'+dir); }
+      }
+    });
+    if (currentPanelSym) updatePanelPrice(currentPanelSym);
+  } catch(e) { setLive('error',e.message); }
+}
+
+function setLive(status,msg) {
+  const dot=document.getElementById('liveDot'), text=document.getElementById('liveText');
+  if (!dot) return;
+  const MAP={open:['dot-green','Live'],closed:['dot-grey','Market Closed'],loading:['dot-yellow','Updating…'],error:['dot-red','Price Error'],idle:['dot-grey','Prices paused']};
+  const [cls,lbl]=MAP[status]||MAP.idle;
+  dot.className='live-dot '+cls; text.textContent=lbl;
+  document.getElementById('liveBadge').title=msg?msg:status==='open'?'Auto-refreshes every 60s — click to refresh now':status==='closed'?'NSE market closed':'';
+}
+
+function manualRefresh() {
+  if (liveTimer) clearInterval(liveTimer);
+  fetchLivePrices();
+  liveTimer=setInterval(fetchLivePrices,LIVE_INTERVAL_MS);
+}
+function startLive() {
+  if (window.location.protocol==='file:') { setLive('error','Open via server for live prices'); return; }
+  fetchLivePrices();
+  liveTimer=setInterval(fetchLivePrices,LIVE_INTERVAL_MS);
+}
+
+// ── ANALYSIS ─────────────────────────────────────────────────────────────────
+async function fetchAnalysis() {
+  if (analysisTimer_) clearTimeout(analysisTimer_);
+  const syms=getLiveSymbols();
+  if (!syms.length) return;
+  try {
+    const res=await fetch('/api/analysis?symbols='+syms.map(encodeURIComponent).join(','));
+    if (!res.ok) throw new Error('HTTP '+res.status);
+    const data=await res.json();
+    if (data.computing||(Object.keys(data.analysis||{}).length===0&&data.computing!==false)) {
+      setAnalysisBadge('computing');
+      analysisComputing=true;
+      analysisTimer_=setTimeout(fetchAnalysis,ANALYSIS_RETRY);
+      return;
+    }
+    if (data.analysis&&Object.keys(data.analysis).length) {
+      analysisData=data.analysis;
+      analysisComputing=false;
+      setAnalysisBadge('ready',data.ts);
+      render();
+      if (currentPanelSym) renderPanelContent(currentPanelSym);
+    } else {
+      setAnalysisBadge('computing');
+      analysisComputing=true;
+      analysisTimer_=setTimeout(fetchAnalysis,ANALYSIS_RETRY);
+      return;
+    }
+  } catch(e) { setAnalysisBadge('error'); }
+  analysisTimer_=setTimeout(fetchAnalysis,ANALYSIS_TTL_MS);
+}
+
+async function analyseNewStock(sym) {
+  if (SGB_SET.has(sym)) return;
+  try {
+    const res=await fetch('/api/analyse_stock?symbol='+encodeURIComponent(sym));
+    if (!res.ok) return;
+    const data=await res.json();
+    if (data.analysis) {
+      analysisData[sym]=data.analysis;
+      render();
+      if (currentPanelSym===sym) renderPanelContent(sym);
+    }
+  } catch(e) { console.warn('analyseNewStock error:',e); }
+}
+
+function setAnalysisBadge(status,ts) {
+  const el=document.getElementById('analysisBadge');
+  if (!el) return;
+  if (status==='computing') {
+    el.innerHTML='<span class="spinner"></span><span style="color:var(--yellow);font-size:11px">Analysis computing…</span>';
+  } else if (status==='ready') {
+    const t=ts?new Date(ts*1000).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}):'';
+    el.innerHTML=`<span style="color:var(--muted);font-size:11px">Analysis ${t}</span>`;
+  } else {
+    el.innerHTML='<span style="color:var(--red);font-size:11px">Analysis unavailable</span>';
+  }
+}
+
+function startAnalysis() {
+  if (window.location.protocol==='file:') return;
+  setAnalysisBadge('computing');
+  fetchAnalysis();
+}
+
+// ── FORMAT ────────────────────────────────────────────────────────────────────
+function fmt(n) {
+  const abs=Math.abs(n),sg=n<0?'-':'';
+  if (abs>=1e7) return sg+'₹'+(abs/1e7).toFixed(2)+' Cr';
+  if (abs>=1e5) return sg+'₹'+(abs/1e5).toFixed(2)+' L';
+  return sg+'₹'+abs.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');
+}
+function fmtN(n) { return n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,','); }
+function pc(n)   { return n>=0?'pnl-pos':'pnl-neg'; }
+function sg(n)   { return n>=0?'+':''; }
+function fmtCr(v) {
+  if (v==null) return '—';
+  if (v>=1e9)  return (v/1e9).toFixed(1)+' B';
+  if (v>=1e7)  return (v/1e7).toFixed(1)+' Cr';
+  return v.toLocaleString('en-IN');
+}
+
+// ── RENDER ────────────────────────────────────────────────────────────────────
+function render() {
+  renderSummary(); renderTable();
+  const d=new Date(D.lastUpdated);
+  document.getElementById('luText').textContent=d.toLocaleString('en-IN',{dateStyle:'short',timeStyle:'short'});
+  document.getElementById('tab-p1').textContent='Portfolio 1 ('+D.portfolios.p1.stocks.length+')';
+  document.getElementById('tab-p2').textContent='Portfolio 2 ('+D.portfolios.p2.stocks.length+')';
+}
+function renderSummary() {
+  const s1=portfolioStats('p1'),s2=portfolioStats('p2');
+  const t={inv:s1.inv+s2.inv,cur:s1.cur+s2.cur,pnl:s1.pnl+s2.pnl};
+  t.pct=t.inv>0?t.pnl/t.inv*100:0;
+  document.getElementById('summaryGrid').innerHTML=[
+    {lbl:'Total Invested', val:fmt(t.inv),sub:(s1.count+s2.count)+' holdings · 2 accounts',cls:''},
+    {lbl:'Current Value',  val:fmt(t.cur),sub:sg(t.pnl)+fmt(t.pnl)+' total P&L',cls:pc(t.pnl)},
+    {lbl:'Overall P&L',    val:sg(t.pnl)+fmt(t.pnl),sub:sg(t.pct)+t.pct.toFixed(2)+'%',cls:pc(t.pnl)},
+    {lbl:'Portfolio 1 P&L',val:sg(s1.pnl)+fmt(s1.pnl),sub:sg(s1.pct)+s1.pct.toFixed(2)+'% · '+fmt(s1.cur),cls:pc(s1.pnl)},
+    {lbl:'Portfolio 2 P&L',val:sg(s2.pnl)+fmt(s2.pnl),sub:sg(s2.pct)+s2.pct.toFixed(2)+'% · '+fmt(s2.cur),cls:pc(s2.pnl)},
+  ].map(c=>`<div class="card"><div class="card-label">${c.lbl}</div><div class="card-value ${c.cls}">${c.val}</div><div class="card-sub">${c.sub}</div></div>`).join('');
+}
+
+const COLS=[
+  {key:'symbol', lbl:'Stock',cls:''},
+  {key:'qty',    lbl:'Qty',cls:'td-right'},
+  {key:'avgCost',lbl:'Avg Cost',cls:'td-right'},
+  {key:'ltp',    lbl:'LTP / Day Chg',cls:'td-right'},
+  {key:'inv',    lbl:'Invested',cls:'td-right hide-sm'},
+  {key:'cur',    lbl:'Curr. Value',cls:'td-right hide-sm'},
+  {key:'pnl',    lbl:'P&L',cls:'td-right'},
+  {key:'pnlPct', lbl:'P&L %',cls:'td-right'},
+  {key:'rsi',    lbl:'RSI / Trend',cls:'td-right'},
+  {key:'call',   lbl:'Signal',cls:''},
+  {key:'_',      lbl:'',cls:''},
+];
+
+function renderRsiCell(sym) {
+  const a=analysisData[sym];
+  if (!a||a.rsi==null) return analysisComputing?`<td class="td-right"><span class="spinner"></span></td>`:`<td class="td-right" style="color:var(--muted)">—</td>`;
+  const col=a.rsi<30?'var(--green)':a.rsi>70?'var(--red)':'var(--yellow)';
+  const fill=Math.min(100,Math.max(0,a.rsi));
+  const badge=a.trend==='UPTREND'?'<span class="trend-badge trend-up">UP</span>':a.trend==='DOWNTREND'?'<span class="trend-badge trend-dn">DN</span>':'<span class="trend-badge trend-sw">SW</span>';
+  return `<td class="td-right"><div class="rsi-wrap"><span style="font-weight:600;color:${col};font-size:12px">${a.rsi}</span><div class="rsi-bar-bg"><div class="rsi-bar-fill" style="width:${fill}%;background:${col}"></div></div>${badge}</div></td>`;
+}
+
+function renderCallCell(sym) {
+  const a=analysisData[sym];
+  if (!a||!a.call) return analysisComputing?'<td></td>':'<td><span style="color:var(--muted);font-size:11px">—</span></td>';
+  const cls=a.call==='BUY'?'call-buy':a.call==='REDUCE'?'call-red':'call-hold';
+  return `<td><span class="call-pill ${cls}" style="cursor:pointer" onclick="openStockPanel('${sym}')" title="Click for full reasoning">${a.call}</span></td>`;
+}
+
+function renderTable() {
+  const q=document.getElementById('searchInput').value.toLowerCase();
+  let rows=getRows(activeTab).filter(s=>!q||s.symbol.toLowerCase().includes(q));
+  if (sortKey&&sortKey!=='_'&&sortKey!=='rsi'&&sortKey!=='call')
+    rows.sort((a,b)=>{const av=a[sortKey],bv=b[sortKey];return(av>bv?1:av<bv?-1:0)*sortDir;});
+  const multi=activeTab==='all';
+  document.getElementById('tableTitle').textContent=multi?'All Holdings':D.portfolios[activeTab].name;
+  document.getElementById('tHead').innerHTML='<tr>'+COLS.map(c=>{
+    const sc=sortKey===c.key?(sortDir===1?'sort-asc':'sort-desc'):'';
+    return `<th class="${c.cls} ${sc}" onclick="doSort('${c.key}')">${c.lbl}</th>`;
+  }).join('')+'</tr>';
+  if (!rows.length){document.getElementById('tBody').innerHTML=`<tr><td colspan="${COLS.length}" class="empty">No holdings found</td></tr>`;return;}
+  document.getElementById('tBody').innerHTML=rows.map(s=>{
+    const rowId='row-'+s.pid+'_'+s.symbol.replace(/[^a-zA-Z0-9]/g,'_');
+    const isSgb=SGB_SET.has(s.symbol);
+    const dayChg=(!isSgb&&s._chgPct!=null)?`<div class="day-chg ${s._chgPct>=0?'green':'red'}">${sg(s._chgPct)}${s._chgPct.toFixed(2)}%</div>`:'';
+    return `<tr id="${rowId}">
+      <td><span class="stock-link" onclick="openStockPanel('${s.symbol}')" title="Click for analysis">${s.symbol}</span>${multi?`<span class="portfolio-badge">${s.pid==='p1'?'P1':'P2'}</span>`:''}</td>
+      <td class="td-right editable" onclick="openEdit('${s.pid}',${s.idx},'qty','Quantity','${s.symbol}')">${s.qty}</td>
+      <td class="td-right editable" onclick="openEdit('${s.pid}',${s.idx},'avgCost','Avg Cost Price (₹)','${s.symbol}')">&#8377;${fmtN(s.avgCost)}</td>
+      <td class="td-right editable" onclick="openEdit('${s.pid}',${s.idx},'ltp','Current Price / LTP (₹)','${s.symbol}')">&#8377;${fmtN(s.ltp)}${dayChg}${isSgb?'<div class="day-chg" style="color:var(--muted)">manual</div>':''}</td>
+      <td class="td-right hide-sm">${fmt(s.inv)}</td>
+      <td class="td-right hide-sm">${fmt(s.cur)}</td>
+      <td class="td-right ${pc(s.pnl)}">${sg(s.pnl)}${fmt(s.pnl)}</td>
+      <td class="td-right ${pc(s.pnlPct)}">${sg(s.pnlPct)}${s.pnlPct.toFixed(2)}%</td>
+      ${renderRsiCell(s.symbol)}
+      ${renderCallCell(s.symbol)}
+      <td><button class="btn btn-del" onclick="delStock('${s.pid}',${s.idx},'${s.symbol}')">&#10005;</button></td>
+    </tr>`;
+  }).join('');
+}
+
+// ── TABS / SORT ────────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  activeTab = tab;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.add('active');
+
+  const isGuide = tab === 'guide';
+  document.querySelector('.table-container').style.display = isGuide ? 'none' : '';
+  document.getElementById('glossarySection').style.display = isGuide ? 'block' : 'none';
+
+  if (!isGuide) render();
+}
+function doSort(key) {
+  if (key==='_') return;
+  sortDir=sortKey===key?sortDir*-1:(key==='symbol'?1:-1);
+  sortKey=key; render();
+}
+
+// ── REASONING ENGINE ─────────────────────────────────────────────────────────
+// Produces plain-English explanations for beginners
+function buildReasoning(a, ltp) {
+  const pts = [];
+
+  // RSI
+  if (a.rsi != null) {
+    if (a.rsi < 25) pts.push({type:'bull', text:`<strong>RSI is very low (${a.rsi})</strong> — The stock has been sold off heavily and looks deeply oversold. Think of it like a rubber band stretched too far: it often snaps back. This is one of the stronger buying signals.`});
+    else if (a.rsi < 35) pts.push({type:'bull', text:`<strong>RSI is ${a.rsi} (oversold)</strong> — The stock has been falling and may be close to a reversal. More selling has happened than is probably justified. Worth watching for a bounce.`});
+    else if (a.rsi < 50) pts.push({type:'note', text:`<strong>RSI is ${a.rsi} (mildly weak)</strong> — Momentum is slightly below neutral. The stock isn't in crisis, but buyers haven't taken control yet.`});
+    else if (a.rsi < 60) pts.push({type:'note', text:`<strong>RSI is ${a.rsi} (neutral)</strong> — The stock is balanced between buyers and sellers. No strong signal in either direction from momentum alone.`});
+    else if (a.rsi < 70) pts.push({type:'note', text:`<strong>RSI is ${a.rsi} (building momentum)</strong> — Buyers are in control and momentum is strong, but not yet at extreme levels. This is healthy in an uptrend.`});
+    else if (a.rsi < 80) pts.push({type:'bear', text:`<strong>RSI is ${a.rsi} (overbought)</strong> — The stock has risen a lot quickly and may be getting expensive. A pullback or pause is common at these levels. Reduces upside in the short term.`});
+    else pts.push({type:'bear', text:`<strong>RSI is ${a.rsi} (very overbought)</strong> — Extreme buying has pushed the stock well above normal levels. Risk of a sharp pullback is higher here. Not a good time to be adding.`});
+  }
+
+  // MACD
+  if (a.macd_bullish != null) {
+    if (a.macd_bullish) pts.push({type:'bull', text:`<strong>MACD is bullish</strong> — The short-term price average (12 days) has moved above the long-term one (26 days). This means recent momentum is improving and buyers are gaining control. Think of it as short-term energy turning positive.`});
+    else pts.push({type:'bear', text:`<strong>MACD is bearish</strong> — The short-term price average has dipped below the long-term one. Momentum is weakening and sellers currently have the edge. This is a caution sign.`});
+  }
+
+  // Trend
+  if (a.trend) {
+    if (a.trend==='UPTREND') pts.push({type:'bull', text:`<strong>Stock is in an uptrend</strong> — The price is above both its 50-day and 200-day moving averages. This means the direction of travel has been up for months. Trading with the trend is generally safer than against it.`});
+    else if (a.trend==='DOWNTREND') pts.push({type:'bear', text:`<strong>Stock is in a downtrend</strong> — The price is below both its 50-day and 200-day moving averages. The long-term direction is down. Be careful: catching a falling stock can be risky without a clear reversal signal.`});
+    else pts.push({type:'note', text:`<strong>Stock is moving sideways</strong> — No clear up or down direction right now. The stock is in a consolidation phase. These can break either way, so it's best to wait for a clearer signal before acting.`});
+  }
+
+  // Bollinger Bands
+  if (a.bb_lower!=null && ltp!=null) {
+    if (ltp<=a.bb_lower*1.02) pts.push({type:'bull', text:`<strong>Near Bollinger Band lower boundary</strong> — The price is touching or near the lower statistical boundary of normal price movement. Stocks at this level often bounce back toward the middle, making it a potential entry point.`});
+    else if (ltp>=a.bb_upper*0.98) pts.push({type:'bear', text:`<strong>Near Bollinger Band upper boundary</strong> — The price is stretched near the upper end of its statistical range. The stock may be due for a pause or pullback as it rarely stays at extremes for long.`});
+  }
+
+  // 52-week position
+  if (a.from_high!=null) {
+    if (a.from_high<-50) pts.push({type:'note', text:`<strong>${Math.abs(a.from_high).toFixed(0)}% below its 52-week high</strong> — The stock has fallen sharply from its peak. This could mean a genuine bargain, or it could mean the business has problems. Always worth checking why it fell before buying.`});
+    else if (a.from_high<-30) pts.push({type:'note', text:`<strong>${Math.abs(a.from_high).toFixed(0)}% below 52-week high</strong> — A significant correction from the peak. Worth investigating if it's an opportunity or a warning sign.`});
+    else if (a.from_high>-5) pts.push({type:'note', text:`<strong>Near 52-week high</strong> — The stock is trading close to its highest price in a year. This shows strength, but also means there's less room to run before facing resistance.`});
+  }
+
+  // P/E valuation
+  if (a.pe!=null) {
+    if (a.pe<10) pts.push({type:'bull', text:`<strong>P/E ratio of ${a.pe.toFixed(1)}x is very low</strong> — You're paying only ₹${a.pe.toFixed(1)} for every ₹1 the company earns per year. Very cheap by historical standards. Could be a bargain or a value trap — worth investigating.`});
+    else if (a.pe<20) pts.push({type:'note', text:`<strong>P/E ratio of ${a.pe.toFixed(1)}x is reasonable</strong> — A fair price relative to earnings. Not too expensive, not too cheap.`});
+    else if (a.pe<40) pts.push({type:'note', text:`<strong>P/E ratio of ${a.pe.toFixed(1)}x is moderate</strong> — The market is paying a growth premium. Acceptable if the company is growing earnings fast.`});
+    else if (a.pe>40) pts.push({type:'bear', text:`<strong>P/E ratio of ${a.pe.toFixed(1)}x is high</strong> — The market has very high expectations built in. If growth disappoints, the stock can fall sharply. Higher risk from a valuation standpoint.`});
+  }
+
+  // ROE
+  if (a.roe!=null) {
+    const roePct = a.roe*100;
+    if (roePct>20) pts.push({type:'bull', text:`<strong>Return on Equity (ROE) is ${roePct.toFixed(1)}%</strong> — The company earns a high return on shareholder money. A ROE above 15-20% is generally considered excellent and shows a well-run business.`});
+    else if (roePct<8) pts.push({type:'bear', text:`<strong>Return on Equity (ROE) is ${roePct.toFixed(1)}%</strong> — The company earns a low return on its equity. This means management isn't generating strong profits from the money invested in the business.`});
+  }
+
+  return pts;
+}
+
+// ── STOCK PANEL ───────────────────────────────────────────────────────────────
+function openStockPanel(sym) {
+  currentPanelSym=sym;
+  document.getElementById('panelOverlay').classList.add('show');
+  document.getElementById('stockPanel').classList.add('open');
+  document.getElementById('spSym').textContent=sym;
+  document.getElementById('spSector').textContent='';
+  document.getElementById('spBody').innerHTML='<div class="sp-loading"><span class="spinner"></span> Loading…</div>';
+  updatePanelPrice(sym);
+  renderPanelContent(sym);
+}
+
+function updatePanelPrice(sym) {
+  let ltp=null,chg=null,chgPct=null;
+  for (const pid of ['p1','p2']) {
+    const s=D.portfolios[pid].stocks.find(x=>x.symbol===sym);
+    if (s) { ltp=s.ltp; chg=s._chg??null; chgPct=s._chgPct??null; break; }
+  }
+  const ltpEl=document.getElementById('spLtp'), chgEl=document.getElementById('spChg');
+  if (ltpEl&&ltp!=null) {
+    ltpEl.textContent='₹'+fmtN(ltp);
+    if (chgPct!=null) {
+      chgEl.textContent=(chgPct>=0?'+':'')+chgPct.toFixed(2)+'%  '+(chg>=0?'+':'')+'₹'+Math.abs(chg).toFixed(2);
+      chgEl.style.color=chgPct>=0?'var(--green)':'var(--red)';
+    } else { chgEl.textContent=''; }
+  }
+}
+
+function renderPanelContent(sym) {
+  const a=analysisData[sym];
+  let ltp=null;
+  for (const pid of ['p1','p2']) {
+    const s=D.portfolios[pid].stocks.find(x=>x.symbol===sym);
+    if (s) { ltp=s.ltp; break; }
+  }
+
+  if (!a) {
+    document.getElementById('spBody').innerHTML=`
+      <div class="sp-computing"><span class="spinner"></span> Analysis is computing — this takes about 60 seconds on first run. Check back shortly.</div>
+      <div style="padding:16px 20px;color:var(--muted);font-size:12px">Tip: click any other stock while waiting — analysis fills in as each one completes.</div>`;
+    if (document.getElementById('spSector')) document.getElementById('spSector').textContent='';
+    return;
+  }
+
+  if (a.sector) document.getElementById('spSector').textContent=a.sector+(a.industry?' · '+a.industry:'');
+
+  let html='';
+
+  // ── Call + Full Reasoning ──
+  if (a.call) {
+    const callCls=a.call==='BUY'?'call-buy':a.call==='REDUCE'?'call-red':'call-hold';
+    const callDesc=a.call==='BUY'?'More signals point to upside than downside right now.':a.call==='REDUCE'?'More signals point to weakness. Consider reducing exposure.':'Signals are mixed. No strong case to buy more or sell right now.';
+    const reasons=buildReasoning(a,ltp);
+    html+=`<div class="sp-call-block">
+      <div class="sp-call-header">
+        <span class="call-pill ${callCls} sp-call-big">${a.call}</span>
+        <span style="font-size:12px;color:var(--muted)">${callDesc}</span>
+      </div>
+      <ul class="sp-reasoning-list">
+        ${reasons.map(r=>{
+          const iconCls=r.type==='bull'?'icon-bull':r.type==='bear'?'icon-bear':'icon-note';
+          const icon=r.type==='bull'?'+':r.type==='bear'?'−':'i';
+          return `<li class="sp-reason">
+            <span class="sp-reason-icon ${iconCls}">${icon}</span>
+            <span class="sp-reason-text">${r.text}</span>
+          </li>`;
+        }).join('')}
+      </ul>
+    </div>`;
+  }
+
+  // ── Returns ──
+  const rets=[{lbl:'1 Month',val:a.ret_1m},{lbl:'3 Months',val:a.ret_3m},{lbl:'6 Months',val:a.ret_6m}];
+  html+=`<div class="sp-section">
+    <div class="sp-section-title">Performance Returns</div>
+    <div class="sp-returns">${rets.map(r=>`
+      <div class="ret-cell">
+        <div class="lbl">${r.lbl}</div>
+        <div class="val ${r.val==null?'':r.val>=0?'green':'red'}">${r.val==null?'—':(r.val>=0?'+':'')+r.val.toFixed(1)+'%'}</div>
+      </div>`).join('')}
+    </div>
+  </div>`;
+
+  // ── Technical Levels ──
+  const tech=[
+    {lbl:'52-Week High',    val:a.w52_high!=null?'₹'+fmtN(a.w52_high):'—'},
+    {lbl:'52-Week Low',     val:a.w52_low!=null?'₹'+fmtN(a.w52_low):'—'},
+    {lbl:'Distance from Peak',val:a.from_high!=null?(a.from_high>=0?'+':'')+a.from_high.toFixed(1)+'%':'—'},
+    {lbl:'20-Day Avg (MA20)',val:a.ma20!=null?'₹'+fmtN(a.ma20):'—'},
+    {lbl:'50-Day Avg (MA50)',val:a.ma50!=null?'₹'+fmtN(a.ma50):'—'},
+    {lbl:'200-Day Avg',     val:a.ma200!=null?'₹'+fmtN(a.ma200):'—'},
+    {lbl:'BB Upper Band',   val:a.bb_upper!=null?'₹'+fmtN(a.bb_upper):'—'},
+    {lbl:'BB Lower Band',   val:a.bb_lower!=null?'₹'+fmtN(a.bb_lower):'—'},
+  ];
+  html+=`<div class="sp-section">
+    <div class="sp-section-title">Technical Levels</div>
+    <div class="sp-grid2">${tech.map(t=>`<div class="sp-cell"><div class="lbl">${t.lbl}</div><div class="val">${t.val}</div></div>`).join('')}</div>
+  </div>`;
+
+  // ── Fundamentals ──
+  const funds=[
+    {lbl:'P/E Ratio',      val:a.pe!=null?a.pe.toFixed(1)+'x':'—',    tip:'Price-to-Earnings: how much you pay per ₹1 of company profit'},
+    {lbl:'P/B Ratio',      val:a.pb!=null?a.pb.toFixed(2)+'x':'—',    tip:'Price-to-Book: share price vs book value of assets'},
+    {lbl:'ROE',            val:a.roe!=null?(a.roe*100).toFixed(1)+'%':'—', tip:'Return on Equity: how well the company uses shareholder money'},
+    {lbl:'EPS (TTM)',      val:a.eps!=null?'₹'+a.eps.toFixed(2):'—',  tip:'Earnings per share over the last 12 months'},
+    {lbl:'Revenue Growth', val:a.rev_growth!=null?(a.rev_growth>=0?'+':'')+(a.rev_growth*100).toFixed(1)+'%':'—', tip:'Year-over-year revenue growth'},
+    {lbl:'Profit Margin',  val:a.profit_margin!=null?(a.profit_margin*100).toFixed(1)+'%':'—', tip:'Net profit as % of revenue'},
+    {lbl:'Market Cap',     val:a.mkt_cap!=null?fmtCr(a.mkt_cap):'—', tip:'Total value of all shares'},
+    {lbl:'Sector',         val:a.sector||'—',                          tip:'Industry sector'},
+  ];
+  html+=`<div class="sp-section">
+    <div class="sp-section-title">Fundamentals</div>
+    <div class="sp-grid2">${funds.map(f=>`<div class="sp-cell" title="${f.tip}"><div class="lbl">${f.lbl}</div><div class="val">${f.val}</div></div>`).join('')}</div>
+  </div>`;
+
+  // ── Charts ──
+  if (!SGB_SET.has(sym)) {
+    html+=`
+    <div class="sp-section">
+      <div class="sp-section-title">Price &amp; Moving Averages (6 months)</div>
+      <div class="sp-chart-wrap"><canvas id="spPriceChart"></canvas></div>
+    </div>
+    <div class="sp-section">
+      <div class="sp-section-title">RSI — Momentum Indicator (0=oversold, 100=overbought)</div>
+      <div class="sp-chart-wrap sm"><canvas id="spRsiChart"></canvas></div>
+    </div>
+    <div class="sp-section">
+      <div class="sp-section-title">MACD — Trend Momentum (green bars = bullish, red = bearish)</div>
+      <div class="sp-chart-wrap sm"><canvas id="spMacdChart"></canvas></div>
+    </div>`;
+  }
+
+  // ── News ──
+  if (a.news&&a.news.length) {
+    html+=`<div class="sp-section">
+      <div class="sp-section-title">Latest News</div>
+      ${a.news.map(n=>`
+        <div class="sp-news-item">
+          <div class="sp-news-title"><a href="${n.link||'#'}" target="_blank" rel="noopener">${n.title||'No title'}</a></div>
+          ${n.publisher?`<div class="sp-news-meta">${n.publisher}</div>`:''}
+        </div>`).join('')}
+    </div>`;
+  }
+
+  document.getElementById('spBody').innerHTML=html;
+
+  if (!SGB_SET.has(sym)) fetchAndRenderCharts(sym);
+}
+
+async function fetchAndRenderCharts(sym) {
+  try {
+    const res=await fetch('/api/chart?symbol='+encodeURIComponent(sym));
+    if (!res.ok) return;
+    const data=await res.json();
+    if (!data.chart||!data.chart.dates) return;
+    if (currentPanelSym!==sym) return;
+    renderPriceChart(data.chart);
+    renderRsiChart(data.chart);
+    renderMacdChart(data.chart);
+  } catch(e) { console.warn('Chart fetch error:',e); }
+}
+
+Chart.defaults.color='#8b949e';
+Chart.defaults.borderColor='#30363d';
+Chart.defaults.font.size=10;
+
+function destroyChart(id) { if (panelCharts[id]) { try{panelCharts[id].destroy();}catch(e){} delete panelCharts[id]; } }
+
+function baseOpts(yOpts) {
+  return {
+    responsive:true, maintainAspectRatio:false, animation:{duration:300},
+    interaction:{mode:'index',intersect:false},
+    plugins:{legend:{display:false},tooltip:{backgroundColor:'#21262d',borderColor:'#30363d',borderWidth:1,titleColor:'#8b949e',bodyColor:'#e6edf3',padding:8}},
+    scales:{x:{ticks:{maxTicksLimit:6,maxRotation:0},grid:{color:'#21262d'}},y:{...yOpts,grid:{color:'#21262d'}}}
+  };
+}
+
+function renderPriceChart(ch) {
+  destroyChart('price');
+  const canvas=document.getElementById('spPriceChart'); if(!canvas) return;
+  panelCharts['price']=new Chart(canvas,{type:'line',data:{labels:ch.dates,datasets:[
+    {label:'Price',  data:ch.close,    borderColor:'#58a6ff',borderWidth:2,pointRadius:0,tension:0.3,fill:false},
+    {label:'MA 20',  data:ch.ma20,     borderColor:'#e3954a',borderWidth:1.2,pointRadius:0,tension:0.3,fill:false,borderDash:[4,3]},
+    {label:'MA 50',  data:ch.ma50,     borderColor:'#bc8cff',borderWidth:1.2,pointRadius:0,tension:0.3,fill:false,borderDash:[6,3]},
+    {label:'BB High',data:ch.bb_upper, borderColor:'#30363d',borderWidth:1,pointRadius:0,tension:0.3,fill:false},
+    {label:'BB Low', data:ch.bb_lower, borderColor:'#30363d',borderWidth:1,pointRadius:0,tension:0.3,fill:'+1',backgroundColor:'rgba(88,166,255,0.04)'},
+  ]},options:baseOpts({ticks:{callback:v=>'₹'+(v>=1000?(v/1000).toFixed(0)+'k':v)}})});
+}
+
+function renderRsiChart(ch) {
+  destroyChart('rsi');
+  const canvas=document.getElementById('spRsiChart'); if(!canvas) return;
+  panelCharts['rsi']=new Chart(canvas,{type:'line',data:{labels:ch.dates,datasets:[
+    {label:'RSI',data:ch.rsi,borderColor:'#d29922',borderWidth:1.5,pointRadius:0,tension:0.3,fill:false,
+     segment:{borderColor:ctx=>ctx.p1.parsed.y>70?'#f85149':ctx.p1.parsed.y<30?'#3fb950':'#d29922'}},
+    {label:'Overbought',data:Array(ch.dates.length).fill(70),borderColor:'rgba(248,81,73,.35)',borderWidth:1,pointRadius:0,borderDash:[4,3],fill:false},
+    {label:'Oversold',  data:Array(ch.dates.length).fill(30),borderColor:'rgba(63,185,80,.35)', borderWidth:1,pointRadius:0,borderDash:[4,3],fill:false},
+  ]},options:baseOpts({min:0,max:100,ticks:{stepSize:20}})});
+}
+
+function renderMacdChart(ch) {
+  destroyChart('macd');
+  const canvas=document.getElementById('spMacdChart'); if(!canvas) return;
+  const barColors=(ch.macd_hist||[]).map(v=>v>=0?'rgba(63,185,80,.7)':'rgba(248,81,73,.7)');
+  panelCharts['macd']=new Chart(canvas,{type:'bar',data:{labels:ch.dates,datasets:[
+    {type:'bar', label:'Histogram',data:ch.macd_hist,  backgroundColor:barColors,borderWidth:0},
+    {type:'line',label:'MACD',     data:ch.macd,        borderColor:'#58a6ff',borderWidth:1.5,pointRadius:0,tension:0.3,fill:false},
+    {type:'line',label:'Signal',   data:ch.macd_signal, borderColor:'#e3954a',borderWidth:1.2,pointRadius:0,tension:0.3,fill:false,borderDash:[4,3]},
+  ]},options:baseOpts({ticks:{callback:v=>v.toFixed(0)}})});
+}
+
+function closePanel() {
+  document.getElementById('panelOverlay').classList.remove('show');
+  document.getElementById('stockPanel').classList.remove('open');
+  destroyChart('price'); destroyChart('rsi'); destroyChart('macd');
+  currentPanelSym=null;
+}
+
+// ── TRADE ─────────────────────────────────────────────────────────────────────
+function openTradeModal() {
+  ['tSymbol','tQty','tPrice'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('tPreview').style.display='none';
+  setTType('buy');
+  document.getElementById('tradeModal').style.display='flex';
+}
+function setTType(t) {
+  tType=t;
+  document.getElementById('buyBtn').className='trade-btn'+(t==='buy'?' buy-active':'');
+  document.getElementById('sellBtn').className='trade-btn'+(t==='sell'?' sell-active':'');
+  updatePreview();
+}
+function updatePreview() {
+  const pid=document.getElementById('tPortfolio').value,
+        sym=document.getElementById('tSymbol').value.toUpperCase(),
+        qty=parseFloat(document.getElementById('tQty').value)||0,
+        price=parseFloat(document.getElementById('tPrice').value)||0,
+        prev=document.getElementById('tPreview');
+  if (!sym||qty<=0||price<=0) { prev.style.display='none'; return; }
+  const ex=D.portfolios[pid].stocks.find(s=>s.symbol===sym);
+  prev.style.display='block';
+  let h=`<div class="preview-row"><span class="lbl">Trade Value</span><span>&#8377;${fmtN(qty*price)}</span></div>`;
+  if (tType==='buy') {
+    if (ex) {
+      const nq=ex.qty+qty, na=((ex.qty*ex.avgCost)+(qty*price))/nq;
+      h+=`<div class="preview-row"><span class="lbl">New Qty</span><span>${ex.qty} → ${nq}</span></div>`;
+      h+=`<div class="preview-row"><span class="lbl">New Avg Cost</span><span>&#8377;${fmtN(ex.avgCost)} → &#8377;${fmtN(na)}</span></div>`;
+    } else {
+      h+=`<div class="preview-row"><span class="lbl">New holding</span><span>${sym} × ${qty} @ &#8377;${fmtN(price)}</span></div>`;
+    }
+  } else {
+    if (!ex) h+=`<div class="preview-row"><span class="lbl" style="color:var(--red)">Not in portfolio</span></div>`;
+    else if (ex.qty<qty) h+=`<div class="preview-row"><span class="lbl" style="color:var(--red)">Only ${ex.qty} available</span></div>`;
+    else {
+      const rp=qty*(price-ex.avgCost);
+      h+=`<div class="preview-row"><span class="lbl">Remaining</span><span>${ex.qty} → ${ex.qty-qty} shares</span></div>`;
+      h+=`<div class="preview-row"><span class="lbl">Realized P&L</span><span class="${pc(rp)}">${sg(rp)}&#8377;${fmtN(Math.abs(rp))}</span></div>`;
+    }
+  }
+  prev.innerHTML=h;
+}
+function executeTrade() {
+  const pid=document.getElementById('tPortfolio').value,
+        sym=document.getElementById('tSymbol').value.toUpperCase().trim(),
+        qty=parseFloat(document.getElementById('tQty').value),
+        price=parseFloat(document.getElementById('tPrice').value);
+  if (!sym) return alert('Enter a stock symbol');
+  if (!qty||qty<=0) return alert('Enter a valid quantity');
+  if (!price||price<=0) return alert('Enter a valid price');
+  const stocks=D.portfolios[pid].stocks, idx=stocks.findIndex(s=>s.symbol===sym);
+  const isNewStock = idx<0;
+  if (tType==='buy') {
+    if (idx>=0) { const s=stocks[idx],nq=s.qty+qty; stocks[idx].avgCost=Math.round(((s.qty*s.avgCost)+(qty*price))/nq*100)/100; stocks[idx].qty=nq; stocks[idx].ltp=price; }
+    else stocks.push({symbol:sym,qty,avgCost:price,ltp:price});
+  } else {
+    if (idx<0) return alert('Stock not found');
+    if (stocks[idx].qty<qty) return alert('Not enough shares');
+    stocks[idx].qty-=qty; stocks[idx].ltp=price;
+    if (stocks[idx].qty===0&&confirm('All shares of '+sym+' sold. Remove from portfolio?')) stocks.splice(idx,1);
+  }
+  save(); render(); close1('tradeModal');
+  if (tType==='buy'&&isNewStock) analyseNewStock(sym); // auto-analyse new stock
+}
+
+// ── ADD STOCK ─────────────────────────────────────────────────────────────────
+function openAddModal() {
+  ['aSymbol','aQty','aAvg','aLtp'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('addModal').style.display='flex';
+}
+function addStock() {
+  const pid=document.getElementById('aPortfolio').value,
+        sym=document.getElementById('aSymbol').value.toUpperCase().trim(),
+        qty=parseFloat(document.getElementById('aQty').value),
+        avg=parseFloat(document.getElementById('aAvg').value),
+        ltp=parseFloat(document.getElementById('aLtp').value)||avg;
+  if (!sym) return alert('Enter a symbol');
+  if (!qty||qty<=0) return alert('Enter quantity');
+  if (!avg||avg<=0) return alert('Enter avg cost');
+  if (D.portfolios[pid].stocks.find(s=>s.symbol===sym)) return alert(sym+' already in portfolio');
+  D.portfolios[pid].stocks.push({symbol:sym,qty,avgCost:avg,ltp});
+  save(); render(); close1('addModal');
+  analyseNewStock(sym); // auto-start analysis for new stock
+}
+
+// ── EDIT ──────────────────────────────────────────────────────────────────────
+function openEdit(pid,idx,field,label,sym) {
+  editTarget={pid,idx,field};
+  document.getElementById('editTitle').textContent='Edit '+sym;
+  document.getElementById('editLabel').textContent=label;
+  document.getElementById('editVal').value=D.portfolios[pid].stocks[idx][field];
+  document.getElementById('editModal').style.display='flex';
+  setTimeout(()=>{const e=document.getElementById('editVal');e.focus();e.select();},60);
+}
+function saveEdit() {
+  if (!editTarget) return;
+  const {pid,idx,field}=editTarget, val=parseFloat(document.getElementById('editVal').value);
+  if (isNaN(val)||val<0) return alert('Invalid value');
+  if (field==='qty'&&val===0) { if (!confirm('Qty = 0 removes this stock. Continue?')) return; D.portfolios[pid].stocks.splice(idx,1); }
+  else D.portfolios[pid].stocks[idx][field]=val;
+  save(); render(); close1('editModal'); editTarget=null;
+}
+
+// ── DELETE ────────────────────────────────────────────────────────────────────
+function delStock(pid,idx,sym) {
+  if (!confirm('Remove '+sym+' from '+D.portfolios[pid].name+'?')) return;
+  D.portfolios[pid].stocks.splice(idx,1); save(); render();
+}
+
+// ── EXPORT / IMPORT ───────────────────────────────────────────────────────────
+function exportData() {
+  const b=new Blob([JSON.stringify(D,null,2)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(b);
+  a.download='portfolio-'+new Date().toISOString().slice(0,10)+'.json'; a.click();
+}
+function importData() {
+  const inp=document.createElement('input'); inp.type='file'; inp.accept='.json';
+  inp.onchange=e=>{const r=new FileReader();r.onload=ev=>{try{const p=JSON.parse(ev.target.result);if(!p.portfolios)throw new Error('Invalid file');if(confirm('Replace all data?')){D=p;save();render();}}catch(e){alert('Error: '+e.message);}};r.readAsText(e.target.files[0]);};
+  inp.click();
+}
+
+// ── UTILS ─────────────────────────────────────────────────────────────────────
+function close1(id) { document.getElementById(id).style.display='none'; }
+function bgClose(e,id) { if (e.target.classList.contains('modal-overlay')) close1(id); }
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+async function init() {
+  await loadPortfolio(); // load from server (or localStorage fallback)
+  render();
+  startLive();
+  startAnalysis();
+}
+init();
+</script>
+</body>
+</html>
